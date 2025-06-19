@@ -239,3 +239,21 @@ data/
 - 1 additional rugosity file for Townsville
 
 **Note**: The `*` in filenames represents potential additional naming components that may exist between the region ID and the criteria suffix, as the code uses glob pattern matching to find files.
+
+## Tagging and releases
+
+### Create tag
+
+Ensure version is aligned with `Project.toml`
+
+Create tag
+
+```bash
+git tag v0.1.0
+```
+
+Then to push the tag
+
+```bash
+git push origin main --tags
+```
