@@ -1,6 +1,6 @@
 module ReefGuide
 
-# System imports 
+# System imports
 using Base.Threads
 
 # File IO
@@ -15,6 +15,10 @@ using DataFrames, OrderedCollections, SparseArrays
 # Multithreading
 using FLoops, ThreadsX
 
+# Precompilation
+using PrecompileSignatures: @precompile_signatures
+# using PrecompileTools
+
 # Utilities and helpers for assessments
 include("utility/utility.jl")
 
@@ -28,5 +32,8 @@ export initialise_data,
     assess_region,
     _write_cog,
     _write_tiff
+
+# Auto-generate precompilation signatures for ReefGuide
+@precompile_signatures(ReefGuide)
 
 end

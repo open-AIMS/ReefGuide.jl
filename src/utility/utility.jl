@@ -5,9 +5,9 @@ using
     GeoParquet,
     Serialization,
     Logging,
-    Images,
     ImageIO,
     Interpolations
+
 import GeoDataFrames as GDF
 
 include("types.jl")
