@@ -107,6 +107,7 @@ struct CriteriaMetadata
 end
 
 # NOTE: This is where you add to list of all possible criteria
+# each of these correspond to a GeoTIFF file for each region.
 const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
     "Depth" => CriteriaMetadata(;
         id="Depth",
@@ -118,6 +119,28 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         default_bounds=Bounds(; min=-10, max=-2),
         min_tooltip="Minimum depth",
         max_tooltip="Maximum depth"
+    ),
+    "LowTide" => CriteriaMetadata(;
+        id="LowTide",
+        file_suffix="_low_tide",
+        display_label="Low-tide Depth [m]",
+        subtitle="Depth at low tide",
+        units="meters",
+        payload_prefix="low_tide_",
+        default_bounds=Bounds(; min=-10, max=-2),
+        min_tooltip="Minimum depth (low-tide)",
+        max_tooltip="Maximum depth (low-tide)"
+    ),
+    "HighTide" => CriteriaMetadata(;
+        id="HighTide",
+        file_suffix="_high_tide",
+        display_label="High-tide Depth [m]",
+        subtitle="Depth at high tide",
+        units="meters",
+        payload_prefix="high_tide_",
+        default_bounds=Bounds(; min=-10, max=-2),
+        min_tooltip="Minimum depth (high-tide)",
+        max_tooltip="Maximum depth (high-tide)"
     ),
     "Slope" => CriteriaMetadata(;
         id="Slope",
