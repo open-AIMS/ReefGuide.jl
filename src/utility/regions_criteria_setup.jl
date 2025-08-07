@@ -549,7 +549,7 @@ This function will load all regional data and may take some time.
 # Returns
 `RegionalData` struct containing all loaded and processed regional information.
 """
-function initialise_data(data_source_directory::String)::RegionalData
+function initialize_data(data_source_directory::String)::RegionalData
     @info "Starting regional data initialization from source files in $(data_source_directory)"
 
     regional_data::RegionalDataDict = Dict()
@@ -653,6 +653,9 @@ function initialise_data(data_source_directory::String)::RegionalData
     @info "Regional data initialization completed successfully"
     return RegionalData(; regions=regional_data, reef_outlines=canonical_reefs)
 end
+
+# standard English
+@deprecate initialise_data(data_source_directory::String) initialize_data(data_source_directory)
 
 # =============================================================================
 # Display Methods

@@ -25,7 +25,7 @@ include("utility/utility.jl")
 # Assessment logic
 include("assessment_methods/assessment_methods.jl")
 
-export initialise_data,
+export initialize_data,
     assess_sites,
     filter_sites,
     output_geojson,
