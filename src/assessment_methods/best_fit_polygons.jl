@@ -174,7 +174,6 @@ function assess_reef_site(
     )
 end
 
-
 """
     find_optimal_site_alignment(
         lookup_tbl::DataFrame,
@@ -214,6 +213,16 @@ function find_optimal_site_alignment(
     max_count = (
         (x_dist * y_dist) / ceil(degrees_to_meters(res, mean(lookup_tbl.lats)))^2
     )
+
+    # If there are no lookup results - don't try to process polygons
+    if nrow(lookup_tbl) == 0
+        return DataFrame(;
+            score=Float64[],
+            orientation=Int64[],
+            qc_flag=Int64[],
+            geometry=GI.Wrappers.Polygon[]
+        )
+    end
 
     search_box = initial_search_box(
         (lookup_tbl.lons[1], lookup_tbl.lats[1]),
