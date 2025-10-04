@@ -230,7 +230,8 @@ corresponding layer in the RasterStack
 # Fields
 - `region_id::String` : Unique identifier for the region
 - `region_metadata::RegionMetadata` : Display metadata for the region
-- `raster_stack::Rasters.RasterStack` : Geospatial raster data layers
+- `res::Float64` : Resolution of raster data set used for region
+- `crs::EPSG` : Coordinate Reference System
 - `slope_table::DataFrame` : Coordinates and values for valid slope reef
   locations
 - `criteria::Dict{String, BoundedCriteria}` : Computed criteria bounds for this region
@@ -239,7 +240,8 @@ struct RegionalDataEntry
     region_id::String
     region_metadata::RegionMetadata
     valid_extent::Rasters.Raster
-    raster_stack::Rasters.RasterStack
+    res::Float64
+    crs::EPSG
     slope_table::DataFrame
     criteria::BoundedCriteriaDict
 
@@ -328,8 +330,10 @@ struct RegionalDataEntry
             instantiated_criteria
         ) expected_criteria = length(expected_criteria_set)
 
+        res = abs(step(dims(raster_stack, X)))
+        epsg_code = convert(EPSG, crs(raster_stack))
         return new(
-            region_id, region_metadata, valid_extent, raster_stack, slope_table, criteria
+            region_id, region_metadata, valid_extent, res, epsg_code, slope_table, criteria
         )
     end
 end
@@ -655,7 +659,9 @@ function initialize_data(data_source_directory::String)::RegionalData
 end
 
 # standard English
-@deprecate initialise_data(data_source_directory::String) initialize_data(data_source_directory)
+@deprecate initialise_data(data_source_directory::String) initialize_data(
+    data_source_directory
+)
 
 # =============================================================================
 # Display Methods
