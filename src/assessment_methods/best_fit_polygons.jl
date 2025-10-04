@@ -174,7 +174,6 @@ function assess_reef_site(
     )
 end
 
-
 """
     find_optimal_site_alignment(
         lookup_tbl::DataFrame,
@@ -378,4 +377,89 @@ function assess_reef_site(
     end
 
     return score[argmax(score)], argmax(score) - (n_per_side + 1), best_poly[argmax(score)]
+end
+
+"""
+    assess_location_quality(
+        lookup_tbl::DataFrame,
+        assessment_idx::BitVector,
+        res::Float64;
+        target_crs=EPSG(4326)
+    )::Vector{Int8}
+
+Score each pixel based on how many of its immediate neighbours meet criteria.
+
+Note: Score would nominally be out of nine - the total number of cells being the centroid
+      +/- 1 pixel in all directions - however it may be slightly more or less due to
+      raster resolution and approximations as the area is selected with a square polygon.
+
+# Arguments
+- `lookup_tbl` : Lookup table holding all data for the given region
+- `assessment_idx` : True/false indicating which entry in the lookup table to assess
+- `res` : Raster resolution (assumed to be in decimal degrees)
+- `target_crs` : EPSG code of spatial data
+
+# Returns
+Indicative percent values (0 - 100) for each assessed pixel.
+Results are stored as Int8 to reduce memory use.
+"""
+function assess_location_quality(
+    lookup_tbl::DataFrame,
+    assessment_idx::BitVector,
+    res::Float64;
+    target_crs=EPSG(4326)
+)::Vector{Int8}
+    # Create square search box
+    res = degrees_to_meters(res, lookup_tbl.lats[1])
+    x_dist = ceil(Int64, res * 3)  # Search area immediate around target pixel
+    y_dist = x_dist
+    @debug "Initial search box: $(x_dist)m * $(y_dist)m with res: $(res)m^2"
+    @time search_box = initial_search_box(
+        (lookup_tbl.lons[1], lookup_tbl.lats[1]),
+        x_dist,
+        y_dist,
+        target_crs
+    )
+
+    max_count = floor(Int64, (x_dist * y_dist) / res^2)
+
+    # Create search tree
+    @debug "Generating STRT tree"
+    @time tree = STRT.STRtree(lookup_tbl.geometry)
+    assessment_locs = lookup_tbl[assessment_idx, :]
+    n_pixels_to_assess = nrow(assessment_locs)
+    results = zeros(Int8, n_pixels_to_assess)  # Percent value 0 -100
+
+    @debug "$(now()) : Assessment start"
+    @time Threads.@threads for i in 1:n_pixels_to_assess
+        pix = assessment_locs[i, :]
+
+        moved_box::GI.Wrappers.Polygon = move_geom(
+            search_box,
+            (pix.lons, pix.lats)
+        )
+
+        # Find pixels the search area
+        pixel_idx = STRT.query(tree, moved_box)
+        n_matches = length(pixel_idx)
+
+        # Skip if no relevant pixels or if the number of suitable pixels are below required
+        # threshold
+        if n_matches == 0
+            continue
+        end
+
+        # Taking floor to be conservative in estimates
+        results[i] = floor(Int8, (n_matches / max_count) * 100)
+    end
+    @debug "$(now()) : Assessment finished: $(count(results .> 0.0)) / $(n_pixels_to_assess) met criteria"
+
+    if count(results .> 0.0) == 0
+        @warn "Empty raster result!"
+    end
+
+    # Cap to 0 - 100
+    clamp!(results, Int8(0), Int8(100))
+
+    return results
 end
