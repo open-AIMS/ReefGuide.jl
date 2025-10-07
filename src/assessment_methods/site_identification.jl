@@ -105,7 +105,7 @@ end
 Perform raster suitability assessment based on user-defined criteria.
 
 # Arguments
-- params :: RegionalAssessmentParameters
+- `params` : RegionalAssessmentParameters
 
 # Returns
 Raster indicating suitability of target pixel and immediate surrounds.
