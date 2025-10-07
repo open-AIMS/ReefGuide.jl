@@ -3,7 +3,7 @@
 """
     proportion_suitable(
         x::Union{BitMatrix,SparseMatrixCSC{Bool,Int64}}; square_offset::Tuple=(-4, 5)
-    )::SparseMatrixCSC{UInt8,Int64}
+    )::SparseMatrixCSC{Int8,Int64}
 
 Calculate the the proportion of the subsection that is suitable for deployments.
 The `subsection` is the surrounding a rough hectare area centred on each cell of a raster
@@ -26,9 +26,9 @@ meet suitability criteria.
 """
 function proportion_suitable(
     x::Union{BitMatrix,SparseMatrixCSC{Bool,Int64}}; square_offset::Tuple=(-4, 5)
-)::SparseMatrixCSC{UInt8,Int64}
+)::SparseMatrixCSC{Int8,Int64}
     subsection_dims = size(x)
-    target_area = spzeros(UInt8, subsection_dims)
+    target_area = spzeros(Int8, subsection_dims)
 
     for row_col in findall(x)
         (row, col) = Tuple(row_col)
@@ -38,7 +38,7 @@ function proportion_suitable(
         y_top = max(row + square_offset[1], 1)
         y_bottom = min(row + square_offset[2], subsection_dims[1])
 
-        target_area[row, col] = UInt8(sum(@views x[y_top:y_bottom, x_left:x_right]))
+        target_area[row, col] = Int8(sum(@views x[y_top:y_bottom, x_left:x_right]))
     end
 
     return target_area
@@ -82,7 +82,7 @@ function assess_region(
             indicator[r.lon_idx, r.lat_idx] = true
         end
     else
-        @debug "$(now()) : Creating mask as a sparse matrix (est. size: $(mask_size_MB))"
+        @debug "$(now()) : Creating mask as a sparse matrix (est. full size: $(mask_size_MB))"
 
         valid_lons = lookup_tbl[matching_idx, :lon_idx]
         valid_lats = lookup_tbl[matching_idx, :lat_idx]
@@ -149,7 +149,7 @@ function assess_region_quality(
             indicator[r.lon_idx, r.lat_idx] = quality_indicator[i]
         end
     else
-        @debug "$(now()) : Creating mask as a sparse matrix (est. size: $(mask_size_MB))"
+        @debug "$(now()) : Creating mask as a sparse matrix (est. full size: $(mask_size_MB))"
 
         valid_lons = lookup_tbl[matching_idx, :lon_idx]
         valid_lats = lookup_tbl[matching_idx, :lat_idx]
