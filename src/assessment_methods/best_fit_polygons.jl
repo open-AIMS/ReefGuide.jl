@@ -244,7 +244,7 @@ function find_optimal_site_alignment(
 
         # If there are a group of pixels close to each other, only assess the one closest to
         # the center of the group.
-        idx, dists = knn(kdtree, coords, 60)  # retrieve 60 closest locations
+        idx, dists = knn(kdtree, coords, 30)  # retrieve 30 closest locations
 
         # Select current pixel and those ~50% of max shape length away
         x_d = meters_to_degrees(x_dist, coords[2])
