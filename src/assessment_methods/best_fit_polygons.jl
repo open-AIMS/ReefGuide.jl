@@ -423,12 +423,16 @@ function assess_location_quality(
 
     max_count = floor(Int64, (x_dist * y_dist) / res^2)
 
-    # Create search tree
-    @debug "Generating STRT tree"
-    @time tree = STRT.STRtree(lookup_tbl.geometry)
     assessment_locs = lookup_tbl[assessment_idx, :]
+
+    # Create tree specific to search area
+    time_taken = @elapsed begin
+        tree = STRT.STRtree(assessment_locs.geometry)
+    end
+    @debug "Took $(time_taken) seconds to create search-specific tree"
+
     n_pixels_to_assess = nrow(assessment_locs)
-    results = zeros(Int8, n_pixels_to_assess)  # Percent value 0 -100
+    results = zeros(Int8, n_pixels_to_assess)  # Percent value 0 - 100
 
     @debug "$(now()) : Assessment start"
     @time Threads.@threads for i in 1:n_pixels_to_assess
