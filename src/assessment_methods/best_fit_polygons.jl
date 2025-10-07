@@ -413,11 +413,11 @@ function assess_location_quality(
     res = degrees_to_meters(res, lookup_tbl.lats[1])
     x_dist = ceil(Int64, res * 3)  # Search area immediate around target pixel
     y_dist = x_dist
-    @debug "Initial search box: $(x_dist)m * $(y_dist)m with res: $(res)m^2"
-    @time search_box = initial_search_box(
+    @debug "Initial search box: $(x_dist)m * $(y_dist)m with res: $(round(res; digits=2))m^2"
+    search_box = initial_search_box(
         (lookup_tbl.lons[1], lookup_tbl.lats[1]),
-        x_dist,
-        y_dist,
+        x_dist * 0.75, # Approach uses the "touches" algorithm to select pixels so reduce
+        y_dist * 0.75, # size of polygon to ensure only relevant pixels are "touched"
         target_crs
     )
 
@@ -463,7 +463,7 @@ function assess_location_quality(
     end
 
     # Cap to 0 - 100
-    clamp!(results, Int8(0), Int8(100))
+    results = clamp!(results, Int8(0), Int8(100))
 
     return results
 end
