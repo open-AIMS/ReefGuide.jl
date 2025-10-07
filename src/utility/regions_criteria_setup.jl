@@ -249,12 +249,12 @@ struct RegionalDataEntry
         region_id::String,
         region_metadata::RegionMetadata,
         valid_extent::Rasters.Raster,
-        raster_stack::Rasters.RasterStack,
+        raster_layer_names::Vector{String},
         slope_table::DataFrame,
         criteria::BoundedCriteriaDict
     )
         # Get available layers and expected criteria from metadata
-        raster_layer_names = Set(string.(names(raster_stack)))
+        raster_layer_names = Set(raster_layer_names)
         expected_criteria_set = Set(region_metadata.available_criteria)
 
         # Collect criteria that are actually instantiated (non-nothing)
@@ -326,12 +326,13 @@ struct RegionalDataEntry
 
         @info "Created RegionalDataEntry for $(region_metadata.display_name)" region_id slope_locations = nrow(
             slope_table
-        ) raster_layers = length(names(raster_stack)) validated_criteria_layers = length(
+        ) raster_layers = length(raster_layer_names) validated_criteria_layers = length(
             instantiated_criteria
         ) expected_criteria = length(expected_criteria_set)
 
-        res = abs(step(dims(raster_stack, X)))
-        epsg_code = convert(EPSG, crs(raster_stack))
+        res = abs(step(dims(valid_extent, X)))
+        epsg_code = convert(EPSG, crs(valid_extent))
+
         return new(
             region_id, region_metadata, valid_extent, res, epsg_code, slope_table, criteria
         )
@@ -564,7 +565,6 @@ function initialize_data(data_source_directory::String)::RegionalData
             region_metadata.id
 
         # Initialize data collection arrays
-        data_paths = String[]
         data_names = String[]
 
         # Load slope table containing valid reef coordinates and criteria values
@@ -573,10 +573,15 @@ function initialize_data(data_source_directory::String)::RegionalData
         @debug "Loading slope table" file_path = slope_file_path
 
         try
-            slope_table::DataFrame = GeoParquet.read(slope_file_path)
-            @info "Loaded slope table" region_id = region_metadata.id num_locations = nrow(
-                slope_table
-            )
+            load_time = @elapsed begin
+                slope_table::DataFrame = GeoParquet.read(slope_file_path)
+            end
+            @info """
+                Loaded slope table for $(region_metadata.id)
+                    num_locations = $(nrow(slope_table))
+                    Load time = $(load_time)
+            """
+            # size = $(Base.summarysize(slope_table) / 1024^2)
 
             # Add coordinate columns for spatial referencing
             if "lons" ∉ names(slope_table)
@@ -607,25 +612,14 @@ function initialize_data(data_source_directory::String)::RegionalData
                     criteria
                 )
 
-                push!(data_paths, data_file_path)
                 # Use criteria ID as the raster layer name
                 push!(data_names, criteria.id)
             end
-
-            @info "Found all criteria data files for region" region_id = region_metadata.id num_criteria = length(
-                data_paths
-            ) available_criteria = join([c.id for c in region_criteria_list], ", ")
 
             # Compute regional criteria bounds from slope table data
             bounds::BoundedCriteriaDict = derive_criteria_bounds_from_slope_table(
                 slope_table, region_metadata
             )
-
-            # Create lazy-loaded raster stack from all criteria files
-            @debug "Creating raster stack" region_id = region_metadata.id num_layers = length(
-                data_paths
-            )
-            raster_stack = RasterStack(data_paths; name=data_names, lazy=true)
 
             extent_path = joinpath(
                 data_source_directory, "$(region_metadata.id)$(SLOPES_RASTER_SUFFIX)"
@@ -637,8 +631,8 @@ function initialize_data(data_source_directory::String)::RegionalData
                 region_id=region_metadata.id,
                 region_metadata,
                 valid_extent,
-                raster_stack,
                 slope_table,
+                raster_layer_names=data_names,
                 criteria=bounds
             )
 
@@ -673,7 +667,6 @@ Enhanced display format for RegionalDataEntry showing key statistics.
 function Base.show(io::IO, ::MIME"text/plain", entry::RegionalDataEntry)
     println(io, "RegionalDataEntry: $(entry.region_metadata.display_name)")
     println(io, "  Region ID: $(entry.region_id)")
-    println(io, "  Raster layers: $(join(names(entry.raster_stack), ", "))")
     println(io, "  Valid slope locations: $(nrow(entry.slope_table))")
     println(
         io, "  Available criteria: $(join(entry.region_metadata.available_criteria, ", "))"
