@@ -153,6 +153,9 @@ The package supports assessment based on:
 - **Wave Period** - Time between waves (90th percentile)
 - **Rugosity** - Sea floor roughness (Townsville region only)
 
+The metadata for criteria is defined in [ASSESSMENT_CRITERIA](./src/utility/regions_criteria_setup.jl).
+This information is transfered to the [ReefGuide](https://github.com/open-AIMS/reefguide) database and app via the [data spec job](https://github.com/open-AIMS/reefguide/blob/main/docs/prompting-data-spec-reload.md).
+
 ## Key Functions
 
 - `initialize_data(data_dir)` - Load all regional data
