@@ -40,7 +40,8 @@ export initialize_data,
 @setup_workload begin
     @compile_workload begin
         # Enforce precompilation of specific geospatial read/write methods
-        GeoParquet.read(joinpath(pkgdir(ReefGuide), "assets", "dummy.parq"))
+        tmp_parq = GeoParquet.read(joinpath(pkgdir(ReefGuide), "assets", "dummy.parq"))
+        Base.summarysize(tmp_parq)
         GDF.read(joinpath(pkgdir(ReefGuide), "assets", "dummy.gpkg"))
 
         tmpfile = tempname()
