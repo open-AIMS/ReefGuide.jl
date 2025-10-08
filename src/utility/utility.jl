@@ -9,6 +9,7 @@ using
     Interpolations
 
 import GeoDataFrames as GDF
+import SortTileRecursiveTree as STRT
 
 include("types.jl")
 include("regions_criteria_setup.jl")

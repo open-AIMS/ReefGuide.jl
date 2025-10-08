@@ -22,8 +22,11 @@ function _write_cog(
         driver="COG",
         options=Dict{String,String}(
             "COMPRESS" => "DEFLATE",
+            "LEVEL" => "1",
+            "PREDICTOR" => "YES",
             "SPARSE_OK" => "TRUE",
             "OVERVIEW_COUNT" => "5",
+            "BIGTIFF" => "IF_SAFER",
             "BLOCKSIZE" => string(first(tile_size)),
             "NUM_THREADS" => string(num_threads)
         ),
