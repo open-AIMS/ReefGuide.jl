@@ -548,7 +548,7 @@ end
 """
 Load data for a specific target region.
 
-# Arguments 
+# Arguments
 - `region_id::String` : Unique identifier for the target region
 
 # Returns
