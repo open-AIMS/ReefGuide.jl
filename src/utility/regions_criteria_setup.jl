@@ -546,10 +546,15 @@ function load_canonical_reefs(
 end
 
 """
+    load_target_region(;
+        region_id::String, data_source_directory::String
+    )::RegionalDataEntry
+
 Load data for a specific target region.
 
 # Arguments
-- `region_id::String` : Unique identifier for the target region
+- `region_id` : Unique identifier for the target region
+- `data_source_directory` : Location to find data files
 
 # Returns
 `RegionalDataEntry` for the specified region.
