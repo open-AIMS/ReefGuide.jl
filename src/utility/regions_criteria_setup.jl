@@ -604,13 +604,6 @@ function load_target_region(;
             @debug "Processing criteria" criteria_id = criteria.id region_id =
                 region_metadata.id
 
-            # Find the corresponding .tif file for this criteria
-            data_file_path = find_data_source_for_criteria(;
-                data_source_directory,
-                region=region_metadata,
-                criteria
-            )
-
             # Use criteria ID as the raster layer name
             push!(data_names, criteria.id)
         end
