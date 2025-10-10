@@ -357,7 +357,8 @@ struct RegionalData
         regions::RegionalDataDict,
         reef_outlines::DataFrame
     )
-        total_locations = sum(nrow(entry.slope_table) for entry in values(regions))
+        # Total up and consider empty case as well
+        total_locations = sum(nrow(entry.slope_table) for entry in values(regions); init=0)
         @info "RegionalData initialized" num_regions = length(regions) total_valid_locations =
             total_locations reef_outlines = nrow(reef_outlines)
         return new(regions, reef_outlines)
@@ -402,11 +403,17 @@ const REGIONS::Vector{RegionMetadata} = [
     )
 ]
 
+# Extract into lookup table
+const REGIONAL_METADATA_DICT::Dict{String,RegionMetadata} = Dict(
+    region.id => region for region in REGIONS
+)
+
+"""
+
 # =============================================================================
 # Data Loading and Processing Functions
 # =============================================================================
 
-"""
 Build regional criteria bounds from slope table data.
 
 Computes min/max bounds for each assessment criteria by finding extrema
@@ -539,28 +546,26 @@ function load_canonical_reefs(
 end
 
 """
-Initialize all regional data from source files.
+    load_target_region(;
+        region_id::String, data_source_directory::String
+    )::RegionalDataEntry
 
-Loads raster data, slope tables, and computes criteria bounds for all regions.
-This is the main data loading function that builds the complete data structure.
-
-# Warning
-
-This function will load all regional data and may take some time.
+Load data for a specific target region.
 
 # Arguments
+- `region_id` : Unique identifier for the target region
 - `data_source_directory` : Location to find data files
 
 # Returns
-`RegionalData` struct containing all loaded and processed regional information.
+`RegionalDataEntry` for the specified region.
 """
-function initialize_data(data_source_directory::String)::RegionalData
-    @info "Starting regional data initialization from source files in $(data_source_directory)"
+function load_target_region(;
+    region_id::String, data_source_directory::String
+)::RegionalDataEntry
+    try
+        # Get the regional metadata
+        region_metadata = REGIONAL_METADATA_DICT[region_id]
 
-    regional_data::RegionalDataDict = Dict()
-
-    # Process each region sequentially
-    for region_metadata::RegionMetadata in REGIONS
         @info "Processing region" region = region_metadata.display_name region_id =
             region_metadata.id
 
@@ -572,73 +577,115 @@ function initialize_data(data_source_directory::String)::RegionalData
         slope_file_path = joinpath(data_source_directory, slope_filename)
         @debug "Loading slope table" file_path = slope_file_path
 
-        try
-            load_time = @elapsed begin
-                slope_table::DataFrame = GeoParquet.read(slope_file_path)
+        load_time = @elapsed begin
+            slope_table::DataFrame = GeoParquet.read(slope_file_path)
+        end
+        @info """
+            Loaded slope table for $(region_metadata.id)
+                num_locations = $(nrow(slope_table))
+                Load time = $(load_time)
+        """
+        # size = $(Base.summarysize(slope_table) / 1024^2)
+
+        # Add coordinate columns for spatial referencing
+        if "lons" ∉ names(slope_table)
+            add_lat_long_columns_to_dataframe(slope_table)
+        end
+
+        # Filter criteria list to only those available for this region
+        available_criteria::Vector{String} = region_metadata.available_criteria
+        region_criteria_list::Vector{CriteriaMetadata} = [
+            ASSESSMENT_CRITERIA[id] for id in available_criteria
+        ]
+
+        @debug "Filtered criteria for region" region_id = region_metadata.id total_criteria = length(
+            ASSESSMENT_CRITERIA
+        ) available_criteria = length(region_criteria_list) criteria_ids = [
+            c.id for c in region_criteria_list
+        ]
+
+        # Collect raster file paths for available criteria only
+        for criteria::CriteriaMetadata in region_criteria_list
+            @debug "Processing criteria" criteria_id = criteria.id region_id =
+                region_metadata.id
+
+            # Use criteria ID as the raster layer name
+            push!(data_names, criteria.id)
+        end
+
+        # Compute regional criteria bounds from slope table data
+        bounds::BoundedCriteriaDict = derive_criteria_bounds_from_slope_table(
+            slope_table, region_metadata
+        )
+
+        extent_path = joinpath(
+            data_source_directory, "$(region_metadata.id)$(SLOPES_RASTER_SUFFIX)"
+        )
+        valid_extent = Raster(extent_path; lazy=true)
+
+        # Store complete regional data entry
+        return RegionalDataEntry(;
+            region_id=region_metadata.id,
+            region_metadata,
+            valid_extent,
+            slope_table,
+            raster_layer_names=data_names,
+            criteria=bounds
+        )
+
+    catch e
+        @error "Failed to process region data" region_id = region_metadata.id error = e
+        rethrow(e)
+    end
+end
+
+"""
+Initialize all regional data from source files.
+
+Loads raster data, slope tables, and computes criteria bounds for all regions.
+This is the main data loading function that builds the complete data structure.
+
+# Warning
+
+This function will load all regional data and may take some time.
+
+# Arguments
+- `data_source_directory` : Location to find data files
+- `handle_regions` : Whether to process regions (default: true)
+- `target_region` : Which region would you like to load? If provided, loads only
+  that region into the dictionary, otherwise loads all regions
+
+# Returns
+`RegionalData` struct containing all loaded and processed regional information.
+"""
+function initialize_data(;
+    data_source_directory::String,
+    handle_regions::Bool=true,
+    target_region::OptionalValue{String}=nothing
+)::RegionalData
+    @info "Starting regional data initialization from source files in $(data_source_directory)"
+
+    regional_data::RegionalDataDict = Dict()
+
+    # Only process regions if enabled
+    if !handle_regions
+        @warn "Region handling disabled, skipping region data loading"
+    else
+        @info "Region handling enabled, proceeding with region data loading"
+        # Process each region sequentially
+        for region_metadata::RegionMetadata in REGIONS
+            if !isnothing(target_region)
+                if region_metadata.id != target_region
+                    @info "Skipping region as not target" region_id = region_metadata.id target_region
+                    continue
+                end
             end
-            @info """
-                Loaded slope table for $(region_metadata.id)
-                    num_locations = $(nrow(slope_table))
-                    Load time = $(load_time)
-            """
-            # size = $(Base.summarysize(slope_table) / 1024^2)
-
-            # Add coordinate columns for spatial referencing
-            if "lons" ∉ names(slope_table)
-                add_lat_long_columns_to_dataframe(slope_table)
-            end
-
-            # Filter criteria list to only those available for this region
-            available_criteria::Vector{String} = region_metadata.available_criteria
-            region_criteria_list::Vector{CriteriaMetadata} = [
-                ASSESSMENT_CRITERIA[id] for id in available_criteria
-            ]
-
-            @debug "Filtered criteria for region" region_id = region_metadata.id total_criteria = length(
-                ASSESSMENT_CRITERIA
-            ) available_criteria = length(region_criteria_list) criteria_ids = [
-                c.id for c in region_criteria_list
-            ]
-
-            # Collect raster file paths for available criteria only
-            for criteria::CriteriaMetadata in region_criteria_list
-                @debug "Processing criteria" criteria_id = criteria.id region_id =
-                    region_metadata.id
-
-                # Find the corresponding .tif file for this criteria
-                data_file_path = find_data_source_for_criteria(;
-                    data_source_directory,
-                    region=region_metadata,
-                    criteria
-                )
-
-                # Use criteria ID as the raster layer name
-                push!(data_names, criteria.id)
-            end
-
-            # Compute regional criteria bounds from slope table data
-            bounds::BoundedCriteriaDict = derive_criteria_bounds_from_slope_table(
-                slope_table, region_metadata
-            )
-
-            extent_path = joinpath(
-                data_source_directory, "$(region_metadata.id)$(SLOPES_RASTER_SUFFIX)"
-            )
-            valid_extent = Raster(extent_path; lazy=true)
 
             # Store complete regional data entry
-            regional_data[region_metadata.id] = RegionalDataEntry(;
+            regional_data[region_metadata.id] = load_target_region(;
                 region_id=region_metadata.id,
-                region_metadata,
-                valid_extent,
-                slope_table,
-                raster_layer_names=data_names,
-                criteria=bounds
+                data_source_directory
             )
-
-        catch e
-            @error "Failed to process region data" region_id = region_metadata.id error = e
-            rethrow(e)
         end
     end
 
@@ -653,8 +700,9 @@ function initialize_data(data_source_directory::String)::RegionalData
 end
 
 # standard English
-@deprecate initialise_data(data_source_directory::String) initialize_data(
-    data_source_directory
+@deprecate initialise_data(data_source_directory::String) initialize_data(;
+    data_source_directory=data_source_directory,
+    target_region=nothing
 )
 
 # =============================================================================
