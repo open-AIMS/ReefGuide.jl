@@ -184,7 +184,7 @@ For detailed scientific methodology and parameter guidance, consult with the pro
 | ----------------------- | ---------- | ----------------------------------- | ------------------------ | ----------------------------------------------------------------------------- |
 | **Slope Lookup Table**  | Parquet    | `{region}_valid_slopes_lookup.parq` | All (4 files)            | Point data with coordinates and environmental values for valid reef locations |
 | **Valid Extent Raster** | GeoTIFF    | `{region}_valid_slopes.tif`         | All (4 files)            | Binary mask indicating valid reef slope areas                                 |
-| **Depth Raster**        | GeoTIFF    | `{region}*_bathy.tif`               | All (4 files)            | Bathymetry data (corrected to Mean Sea Level)                                 |
+| **Depth Raster**        | GeoTIFF    | `{region}*_bathy.tif`               | All (4 files)            | Bathymetry data (metres, where depth is represented in negative numbers       |
 | **Slope Raster**        | GeoTIFF    | `{region}*_slope.tif`               | All (4 files)            | Reef slope angles in degrees                                                  |
 | **Turbidity Raster**    | GeoTIFF    | `{region}*_turbid.tif`              | All (4 files)            | Water clarity (Secchi depth in meters)                                        |
 | **Wave Height Raster**  | GeoTIFF    | `{region}*_waves_Hs.tif`            | All (4 files)            | Significant wave height, 90th percentile (meters)                             |
