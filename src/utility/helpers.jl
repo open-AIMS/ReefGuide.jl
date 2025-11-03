@@ -1,11 +1,10 @@
 
-
 """
 Convert BoundedCriteriaDict to a vector of CriteriaBounds for assessment processing.
 Transforms the BoundedCriteriaDict into CriteriaBounds objects that include
 evaluation functions. Only includes criteria that are available in the dictionary.
 
-# Arguments 
+# Arguments
 - `bounded_criteria_dict::BoundedCriteriaDict` : Dictionary of bounded criteria to convert
 
 # Returns
@@ -21,7 +20,7 @@ function build_criteria_bounds_from_regional_criteria(
         bounds = CriteriaBounds(
             # Field to get in the data
             bounded_criteria.metadata.id,
-            # Min/max bounds  
+            # Min/max bounds
             bounded_criteria.bounds.min,
             bounded_criteria.bounds.max
         )
@@ -52,7 +51,7 @@ end
 """
 Generate the filename for slope lookup data for a given region.
 
-# Arguments  
+# Arguments
 - `region::RegionMetadata` : Region metadata containing ID
 
 # Returns
@@ -79,7 +78,7 @@ function add_lat_long_columns_to_dataframe(df::DataFrame)::Nothing
     coords = GI.coordinates.(df.geometry)
     # Add longitude column (first coordinate)
     df[!, :lons] .= first.(coords)
-    # Add latitude column (second coordinate) 
+    # Add latitude column (second coordinate)
     df[!, :lats] .= last.(coords)
     @debug "Successfully added coordinate columns"
     return nothing

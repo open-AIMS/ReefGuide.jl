@@ -116,7 +116,7 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         subtitle="Depth from Mean Astronomical Tide",
         units="meters",
         payload_prefix="depth_",
-        default_bounds=Bounds(; min=-10, max=-2),
+        default_bounds=Bounds(; min=-12.5, max=-2.0),
         min_tooltip="Minimum depth",
         max_tooltip="Maximum depth"
     ),
@@ -127,7 +127,7 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         subtitle="Depth at low tide",
         units="meters",
         payload_prefix="low_tide_",
-        default_bounds=Bounds(; min=-10, max=-2),
+        default_bounds=Bounds(; min=-12.5, max=-2.0),
         min_tooltip="Minimum depth (low-tide)",
         max_tooltip="Maximum depth (low-tide)"
     ),
@@ -138,7 +138,7 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         subtitle="Depth at high tide",
         units="meters",
         payload_prefix="high_tide_",
-        default_bounds=Bounds(; min=-10, max=-2),
+        default_bounds=Bounds(; min=-12.5, max=-2.0),
         min_tooltip="Minimum depth (high-tide)",
         max_tooltip="Maximum depth (high-tide)"
     ),
@@ -149,6 +149,7 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         subtitle="Slope of reef",
         units="degrees",
         payload_prefix="slope_",
+        default_bounds=Bounds(; min=0.0, max=40.0),
         min_tooltip="Minimum slope angle (0 is flat)",
         max_tooltip="Maximum slope angle"
     ),
@@ -169,7 +170,7 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         subtitle="Significant Wave Height (90th percentile)",
         units="meters",
         payload_prefix="waves_height_",
-        default_bounds=Bounds(; min=0, max=1),
+        default_bounds=Bounds(; min=0.0, max=2.5),
         min_tooltip="Minimum wave height",
         max_tooltip="Maximum wave height"
     ),
@@ -180,7 +181,7 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         subtitle="Time between waves in seconds (90th percentile)",
         units="seconds",
         payload_prefix="waves_period_",
-        default_bounds=Bounds(; min=0, max=6),
+        default_bounds=Bounds(; min=4.0, max=10.0),
         min_tooltip="Minimum periodicity",
         max_tooltip="Maximum periodicity"
     ),

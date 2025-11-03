@@ -426,8 +426,8 @@ function assess_location_quality(
     @debug "Initial search box: $(x_dist)m * $(y_dist)m with res: $(round(res; digits=2))m^2"
     search_box = initial_search_box(
         (lookup_tbl.lons[1], lookup_tbl.lats[1]),
-        x_dist * 0.75, # Approach uses the "touches" algorithm to select pixels so reduce
-        y_dist * 0.75, # size of polygon to ensure only relevant pixels are "touched"
+        x_dist * 0.9, # Approach uses the "touches" algorithm to select pixels so reduce
+        y_dist * 0.9, # size of polygon to ensure only relevant pixels are "touched"
         target_crs
     )
 
@@ -445,7 +445,7 @@ function assess_location_quality(
     results = zeros(Int8, n_pixels_to_assess)  # Percent value 0 - 100
 
     @debug "$(now()) : Assessment start"
-    @time Threads.@threads for i in 1:n_pixels_to_assess
+    Threads.@threads for i in 1:n_pixels_to_assess
         pix = assessment_locs[i, :]
 
         moved_box::GI.Wrappers.Polygon = move_geom(
