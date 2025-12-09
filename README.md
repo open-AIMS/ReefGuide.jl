@@ -146,7 +146,7 @@ _write_tiff("results/suitability.tif", suitability_raster)
 
 The package supports assessment based on:
 
-- **Depth** - Water depth from mean astronomical tide
+- **Depth** - Water depth (metres, depth is represented in negative numbers)
 - **Slope** - Reef slope angle in degrees
 - **Turbidity** - Water clarity (Secchi depth)
 - **Wave Height** - Significant wave height (90th percentile)
