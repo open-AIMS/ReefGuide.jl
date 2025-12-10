@@ -1,7 +1,7 @@
 name = "ReefGuide"
 uuid = "cee0a5fb-9790-4c4c-b8b7-e40ecbebeb72"
 authors = ["Takuya Iwanaga", "Benjamin Grier", "Arlo White", "Peter Baker"]
-version = "0.1.11"
+version = "0.1.12"
 
 [deps]
 ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
