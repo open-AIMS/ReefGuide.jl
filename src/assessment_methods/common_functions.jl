@@ -166,7 +166,7 @@ by 45 degrees to match the identified reef edge.
 - `reef_outlines` : Line segments for the outlines of each reef in `gdf`.
 
 # Returns
-Rotation angle required to match reef edge when used in `rotate_geom(geom_buff, rot_angle)`.
+Rotation angle required to match reef edge when used in `rotate_polygon(geom_buff, rot_angle)`.
 """
 function initial_search_rotation(
     pixel::GeometryBasics.Point{2,Float64},

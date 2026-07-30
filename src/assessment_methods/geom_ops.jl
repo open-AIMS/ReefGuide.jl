@@ -94,61 +94,6 @@ function get_points(geom)
 end
 
 """
-    rotate_point(p)
-
-Transform the given point `p` to the newly rotated position.
-
-# Returns
-Rotated point.
-"""
-function rotate_point(p)
-    x, y = p
-    x -= cx
-    y -= cy
-    new_x = x * cosang - y * sinang + cx
-    new_y = x * sinang + y * cosang + cy
-
-    return SVector(new_x, new_y)
-end
-
-"""
-    rotate_geom(
-        geom,
-        degrees::Float64,
-        target_crs::GeoFormatTypes.EPSG
-    )
-
-Rotate target `geom` by `degrees` rotation in clockwise direction. `target_crs` is applied
-to output geometry.
-
-# Returns
-Rotated geometry.
-"""
-function rotate_geom(
-    geom,
-    degrees::Float64,
-    target_crs::GeoFormatTypes.EPSG
-)
-    degrees == 0.0 && return geom
-
-    theta = deg2rad(degrees)
-    sinang, cosang = sincos(theta)
-
-    # Center is used as pivot point
-    cx, cy = GO.centroid(geom)
-
-    # Extract points
-    new_points = collect(GI.coordinates(geom)...)
-
-    # Calculate new coordinates of each vertex
-    @inbounds @simd for i in eachindex(new_points)
-        new_points[i] = rotate_point(new_points[i])
-    end
-
-    return create_poly(new_points, target_crs)
-end
-
-"""
     move_geom(geom, new_centroid::Tuple)::GI.Wrappers.Polygon
 
 Move a geom to a new centroid.
