@@ -635,7 +635,7 @@ function load_target_region(;
         )
 
     catch e
-        @error "Failed to process region data" region_id = region_metadata.id error = e
+        @error "Failed to process region data" region_id = region_id error = e
         rethrow(e)
     end
 end

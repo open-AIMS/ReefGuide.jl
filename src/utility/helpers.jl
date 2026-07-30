@@ -83,3 +83,47 @@ function add_lat_long_columns_to_dataframe(df::DataFrame)::Nothing
     @debug "Successfully added coordinate columns"
     return nothing
 end
+
+function dms_to_decimal(d, m, s, o)
+    # 40°26'46"N
+
+    decimal_degrees = d + (m / 60) + (s / 3600)
+
+    if lowercase(o) == "s" || lowercase(o) == "w"
+        # South, so invert
+        decimal_degrees = -decimal_degrees
+    end
+
+    return decimal_degrees
+end
+function dms_to_decimal(dms::String)
+    expanded = split(dms)
+    if length(expanded) == 4
+        if lowercase(expanded[1]) in ["n", "e"]
+            o, d, m, s = expanded
+        elseif lowercase(expanded[1]) in ["s", "w"]
+            o, d, m, s = expanded
+        else
+            throw(ArgumentError("Unknown format!"))
+        end
+
+        return dms_to_decimal(d, m, s, o)
+    end
+
+    mat = match(r"(\d+)°(\d+)'(\d+)\"([NSEW])", dms)
+
+    if !isnothing(mat)
+        d = parse(Int, mat.captures[1])
+        m = parse(Int, mat.captures[2])
+        s = parse(Int, mat.captures[3])
+        orient = mat.captures[4][1]
+    else
+        mat = match(r"([NSEW])(\d+)°(\d+)'(\d+)\"", dms)
+        orient = mat.captures[1][1]
+        d = parse(Int, mat.captures[2])
+        m = parse(Int, mat.captures[3])
+        s = parse(Int, mat.captures[4])
+    end
+
+    return dms_to_decimal(d, m, s, orient)
+end

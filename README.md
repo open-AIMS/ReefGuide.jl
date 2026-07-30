@@ -38,7 +38,7 @@ Related repos include
 ## Prerequisites
 
 - Git
-- Julia v1.11 or later (managed via juliaup)
+- Julia v1.12 or later (managed via juliaup)
 
 ## Installation & Setup
 
@@ -48,9 +48,9 @@ Related repos include
    # Install juliaup (Julia version manager)
    curl -fsSL https://install.julialang.org | sh
 
-   # Install and set Julia v1.11 as default
-   juliaup add 1.11
-   juliaup default 1.11
+   # Install and set Julia v1.12 as default
+   juliaup add 1.12
+   juliaup default 1.12
    ```
 
 2. **Clone and setup the project**

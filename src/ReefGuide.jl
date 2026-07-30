@@ -12,9 +12,6 @@ using ArchGDAL, GeoParquet, Rasters
 # Collections
 using DataFrames, OrderedCollections, SparseArrays
 
-# Multithreading
-using FLoops, ThreadsX
-
 # Precompilation
 using PrecompileSignatures: @precompile_signatures
 using PrecompileTools

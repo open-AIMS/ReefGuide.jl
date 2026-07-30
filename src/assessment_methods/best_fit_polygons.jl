@@ -3,118 +3,8 @@
 """
     assess_reef_site(
         rel_pix::DataFrame,
-        geom::GI.Wrappers.Polygon,
-        max_count::Float64,
-        target_crs::GeoFormatTypes.EPSG;
-        degree_step::Float64=15.0,
-        start_rot::Float64=0.0,
-        n_per_side::Int64=2,
-        suit_threshold::Float64=0.7
-    )::Tuple{Float64,Int64,GI.Wrappers.Polygon,Int64}
-
-Assesses the rotations of a search box `geom` for their suitability score (calculated as the
-proportion of pixels that meet all specified criteria thresholds). Search box rotation steps
-are returned so that the `start_rot` angle is 0, rotations anti-clockwise are negative and
-rotations clockwise are positive.
-
-# Extended help
-The scores produced are a proportion of the polygon that are covered by valid pixel points,
-relative to the maximum number of points (`max_count`) (0-1). `max_count` is approximate
-(determined by user `x_dist` and `y_dist` box dimensions) and doesn't account for buffering
-and rotation of the search box. In rare cases scores could be > 1, however returned values
-are capped at max 1.
-
-# Arguments
-- `rel_pix` : The point data for relevant pixels that are within the search area around a pixel.
-- `geom` : Starting search box for assessment.
-- `max_count` : The maximum number of pixels that can intersect the search box (used to standardise scores between 0 and 1).
-- `target_crs` : Coordinate Reference System used for analysis vector and raster data.
-- `degree_step` : Step to vary the search box rotations.
-- `start_rot` : Starting angle rotation that aligns the box with the closest reef edge.
-- `n_per_side` : Number of rotations to perform around the starting search box angle.
-- `suit_threshold` : Suitability threshold, below which sites are excluded from result sets.
-
-# Returns
-- Highest score
-- Highest scoring rotation step
-- Highest scoring polygon
-- Quality control flag for site, indicating if `suit_threshold` was met in the highest scoring rotation.
-"""
-function assess_reef_site(
-    rel_pix::DataFrame,
-    geom::GI.Wrappers.Polygon,
-    max_count::Float64,
-    target_crs::GeoFormatTypes.EPSG;
-    degree_step::Float64=15.0,
-    start_rot::Float64=0.0,
-    n_per_side::Int64=1,
-    suit_threshold::Float64=0.7
-)::Tuple{Float64,Int64,GI.Wrappers.Polygon,Int64}
-    rot_start = (start_rot - (degree_step * n_per_side))
-    rot_end = (start_rot + (degree_step * n_per_side))
-    rotations = rot_start:degree_step:rot_end
-    n_rotations = length(rotations)
-    score = zeros(n_rotations)
-    best_poly = Vector(undef, n_rotations)
-    qc_flag = zeros(Int64, n_rotations)
-
-    for (j, r) in enumerate(rotations)
-        rot_geom = rotate_geom(geom, r, target_crs)
-        score[j] =
-            length(
-                rel_pix[
-                    GO.intersects.([rot_geom], rel_pix.geometry), :lon_idx
-                ]
-            ) / max_count
-        best_poly[j] = rot_geom
-
-        if score[j] < suit_threshold
-            # Early exit as there's no point in searching further.
-            # Changing the rotation is unlikely to improve the score.
-            qc_flag[j] = 1
-            break
-        end
-    end
-
-    return min(score[argmax(score)], 1),
-    argmax(score) - (n_per_side + 1),
-    best_poly[argmax(score)],
-    maximum(qc_flag)
-end
-
-function assess_reef_site(
-    rel_pix::DataFrame,
-    rotated::Vector{GI.Wrappers.Polygon},
-    max_count::Float64,
-    n_per_side::Int64,
-    suit_threshold::Float64
-)::Tuple{Float64,Int64,GI.Wrappers.Polygon,Int64}
-    # Implementation with pre-rotations
-    n_rotations = length(rotated)
-    score = @MVector zeros(n_rotations)
-    qc_flag = @MVector zeros(Int64, n_rotations)
-
-    for (j, r) in enumerate(rotated)
-        score[j] = count(GO.intersects.([r], rel_pix.geometry)) / max_count
-
-        if score[j] < suit_threshold
-            # Early exit as there's no point in searching further.
-            # Changing the rotation is unlikely to improve the score.
-            qc_flag[j] = 1
-            break
-        end
-    end
-
-    return min(score[argmax(score)], 1),
-    argmax(score) - (n_per_side + 1),
-    rotated[argmax(score)],
-    maximum(qc_flag)
-end
-
-"""
-    assess_reef_site(
-        rel_pix::DataFrame,
         rotated::Vector{GI.Wrappers.Polygon},
+        max_count::Float64,
         suitability_threshold::Float64
     )::Tuple{Float64,Int64,GI.Wrappers.Polygon,Int64}
 
@@ -131,7 +21,10 @@ are capped at max 1.
 # Arguments
 - `rel_pix` : The point data for relevant pixels that are within the search area around a pixel.
 - `rotated` : Pre-rotated geometries.
-- `suitability_threshold` : Suitability threshold, below which sites are excluded from result sets.
+- `max_count` : The maximum number of pixels that can intersect the search box (used to convert
+  `suitability_threshold` to the same raw-count scale as `score`).
+- `suitability_threshold` : Suitability threshold (0-1 fraction), below which sites are excluded
+  from result sets.
 
 # Returns
 - Highest score
@@ -142,17 +35,18 @@ are capped at max 1.
 function assess_reef_site(
     rel_pix::DataFrame,
     rotated::Vector{GI.Wrappers.Polygon},
+    max_count::Float64,
     suitability_threshold::Float64
 )::Tuple{Float64,Int64,GI.Wrappers.Polygon,Int64}
     # Implementation with pre-rotations
     n_rotations = length(rotated)
-    score = @MVector zeros(n_rotations)
-    qc_flag = @MVector zeros(Int64, n_rotations)
+    score = zeros(n_rotations)
+    qc_flag = zeros(Int64, n_rotations)
 
     for (j, r) in enumerate(rotated)
         score[j] = count(GO.contains.(Ref(r), rel_pix.geometry))
 
-        if score[j] < suitability_threshold
+        if score[j] < suitability_threshold * max_count
             # Early exit as there's no point in searching further.
             # Changing the rotation is unlikely to improve the score.
             qc_flag[j] = 1
@@ -242,14 +136,16 @@ function find_optimal_site_alignment(
     # We can then apply a heuristic to avoid near-identical assessments.
     @debug "$(now()) : Applying KD-tree filtering on $(nrow(lookup_tbl)) locations"
     inds = Matrix{Float32}([lookup_tbl.lons lookup_tbl.lats]')
+    n_locs = size(inds, 2)
     kdtree = KDTree(inds; leafsize=25)
-    t_ignore_idx = Dict(x => Int64[] for x in Threads.threadpooltids(:default))
-    Threads.@threads for i in 1:size(inds, 2)
-        ignore_idx = t_ignore_idx[Threads.threadid()]
-        if i in ignore_idx
-            continue
-        end
 
+    # Deterministic per-index computation: for each location, find its group of
+    # near-identical neighbours and the neighbour closest to the group's center.
+    # This step has no cross-iteration dependency, so it can be parallelized freely -
+    # unlike the dedup decision below, whose outcome depends on the order locations
+    # are visited in.
+    group_to_ignore = Vector{Vector{Int64}}(undef, n_locs)
+    Threads.@threads for i in 1:n_locs
         coords = inds[:, i]
 
         # If there are a group of pixels close to each other, only assess the one closest to
@@ -270,16 +166,26 @@ function find_optimal_site_alignment(
         )
 
         to_keep = idx[sel][closest_idx]
-        to_ignore = idx[sel][idx[sel] .!= to_keep]
-
-        append!(ignore_idx, to_ignore)
+        group_to_ignore[i] = idx[sel][idx[sel] .!= to_keep]
     end
+
+    # Sequential dedup pass: visit locations in a fixed order and accumulate the
+    # ignore set. A location already marked ignored by an earlier group is skipped
+    # rather than allowed to veto a different group - this is what makes the result
+    # independent of `JULIA_NUM_THREADS`/thread scheduling.
+    ignored = falses(n_locs)
+    for i in 1:n_locs
+        ignored[i] && continue
+        for j in group_to_ignore[i]
+            ignored[j] = true
+        end
+    end
+    ignore_locs = findall(ignored)
 
     # Create search tree
     tree = STRT.STRtree(lookup_tbl.geometry)
 
     # Search each location to assess
-    ignore_locs = unique(vcat(values(t_ignore_idx)...))
     assessment_locs = lookup_tbl[Not(ignore_locs), :]
     n_pixels = nrow(assessment_locs)
     @debug "$(now()) : KD-tree filtering - removed $(length(ignore_locs)) near-identical locations, now assessing $(n_pixels) locations"
@@ -289,8 +195,8 @@ function find_optimal_site_alignment(
     best_rotation = zeros(Int64, n_pixels)
     quality_flag = zeros(Int64, n_pixels)
 
-    FLoops.assistant(false)
-    @floop for (i, pix) in enumerate(eachrow(assessment_locs))
+    Threads.@threads for i in 1:n_pixels
+        pix = assessment_locs[i, :]
         lon = pix.lons
         lat = pix.lats
 
@@ -318,6 +224,7 @@ function find_optimal_site_alignment(
         best_score[i], best_rotation[i], best_poly[i], quality_flag[i] = assess_reef_site(
             relevant_pixels,
             rotated_copy,
+            max_count,
             suit_threshold
         )
     end
@@ -332,61 +239,6 @@ function find_optimal_site_alignment(
         qc_flag=quality_flag,
         geometry=best_poly
     )
-end
-
-"""
-    assess_reef_site(
-        rst::Union{Raster,RasterStack},
-        geom::GI.Wrappers.Polygon,
-        ruleset::Dict{Symbol,Function},
-        degree_step::Float64,
-        start_rot::Float64
-    )::Tuple{Float64,Int64,GI.Wrappers.Polygon}
-
-Assess given reef site for it's suitability score at different specified rotations.
-
-# Arguments
-- `rst` : Raster of suitability scores.
-- `geom` : Initial site polygon with no rotation applied.
-- `ruleset` : Criteria ruleset to apply to `rst` pixels when assessing which pixels are suitable.
-- `degree_step` : Degree value to vary each rotation by. Default = 20 degrees.
-- `start_rot` : Initial rotation used to align the site polygon with the nearest reef edge. Default = 0 degrees.
-
-# Returns
-- Highest score identified with rotating polygons.
-- The index of the highest scoring rotation.
-- The polygon with the highest score out of the assessed rotated polygons.
-"""
-function assess_reef_site(
-    rst::Union{Raster,RasterStack},
-    geom::GI.Wrappers.Polygon,
-    degree_step::Float64,
-    start_rot::Float64
-)::Tuple{Float64,Int64,GI.Wrappers.Polygon}
-    rotations = start_rot:degree_step:360.0
-    n_rotations = length(rotations)
-    score = zeros(n_rotations)
-    best_poly = Vector(undef, n_rotations)
-
-    target_crs = convert(EPSG, GI.crs(rst))
-    for (j, r) in enumerate(rotations)
-        rot_geom = rotate_geom(geom, r, target_crs)
-        c_rst = crop(rst; to=rot_geom)
-        if !all(size(c_rst) .> (0, 0))
-            @warn "No data found!"
-            continue
-        end
-
-        score[j] = mean(c_rst)
-        best_poly[j] = rot_geom
-
-        if score[j] > 0.95
-            # Found a good enough rotation
-            break
-        end
-    end
-
-    return score[argmax(score)], argmax(score) - (n_per_side + 1), best_poly[argmax(score)]
 end
 
 """

@@ -78,7 +78,7 @@ function assess_region(
         @debug "$(now()) : Creating mask as a regular matrix (est. size: $(mask_size_MB))"
 
         indicator = zeros(Int8, region_dims...)
-        @floop for r in eachrow(lookup_tbl[matching_idx, :])
+        Threads.@threads for r in eachrow(lookup_tbl[matching_idx, :])
             indicator[r.lon_idx, r.lat_idx] = true
         end
     else
