@@ -4,6 +4,7 @@
     assess_reef_site(
         rel_pix::DataFrame,
         rotated::Vector{GI.Wrappers.Polygon},
+        max_count::Float64,
         suitability_threshold::Float64
     )::Tuple{Float64,Int64,GI.Wrappers.Polygon,Int64}
 
@@ -20,7 +21,10 @@ are capped at max 1.
 # Arguments
 - `rel_pix` : The point data for relevant pixels that are within the search area around a pixel.
 - `rotated` : Pre-rotated geometries.
-- `suitability_threshold` : Suitability threshold, below which sites are excluded from result sets.
+- `max_count` : The maximum number of pixels that can intersect the search box (used to convert
+  `suitability_threshold` to the same raw-count scale as `score`).
+- `suitability_threshold` : Suitability threshold (0-1 fraction), below which sites are excluded
+  from result sets.
 
 # Returns
 - Highest score
@@ -31,17 +35,18 @@ are capped at max 1.
 function assess_reef_site(
     rel_pix::DataFrame,
     rotated::Vector{GI.Wrappers.Polygon},
+    max_count::Float64,
     suitability_threshold::Float64
 )::Tuple{Float64,Int64,GI.Wrappers.Polygon,Int64}
     # Implementation with pre-rotations
     n_rotations = length(rotated)
-    score = @MVector zeros(n_rotations)
-    qc_flag = @MVector zeros(Int64, n_rotations)
+    score = zeros(n_rotations)
+    qc_flag = zeros(Int64, n_rotations)
 
     for (j, r) in enumerate(rotated)
         score[j] = count(GO.contains.(Ref(r), rel_pix.geometry))
 
-        if score[j] < suitability_threshold
+        if score[j] < suitability_threshold * max_count
             # Early exit as there's no point in searching further.
             # Changing the rotation is unlikely to improve the score.
             qc_flag[j] = 1
@@ -219,6 +224,7 @@ function find_optimal_site_alignment(
         best_score[i], best_rotation[i], best_poly[i], quality_flag[i] = assess_reef_site(
             relevant_pixels,
             rotated_copy,
+            max_count,
             suit_threshold
         )
     end

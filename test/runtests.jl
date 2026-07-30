@@ -44,3 +44,36 @@ end
     @test GI.coordinates.(r1.geometry) == GI.coordinates.(r2.geometry)
 end
 
+"""Axis-aligned square centered at `(cx, cy)` with the given half-width."""
+function _square(cx, cy, half)
+    ring = GI.Wrappers.LinearRing([
+        (cx - half, cy - half),
+        (cx + half, cy - half),
+        (cx + half, cy + half),
+        (cx - half, cy + half),
+        (cx - half, cy - half)
+    ])
+    return GI.Wrappers.Polygon([ring])
+end
+
+@testset "assess_reef_site suitability-threshold scale" begin
+    # 9 points, all contained in a 10x10 search box centered on them.
+    box = _square(2.0, 2.0, 5.0)
+    pts = GI.Wrappers.Point[GI.Wrappers.Point(x, y) for x in 1:3, y in 1:3][:]
+    rel_pix = DataFrame(; geometry=pts)
+    rotated = GI.Wrappers.Polygon[box]
+
+    # raw count is 9; scaled threshold (0.7 * max_count) must be compared on the
+    # same raw-count scale, not against the 0-1 fraction directly.
+    score, _, _, qc_flag_below = ReefGuide.assess_reef_site(rel_pix, rotated, 20.0, 0.7)
+    @test score == 9.0
+    @test qc_flag_below == 1  # 9 < 0.7 * 20 = 14 -> flagged
+
+    _, _, _, qc_flag_above = ReefGuide.assess_reef_site(rel_pix, rotated, 5.0, 0.7)
+    @test qc_flag_above == 0  # 9 >= 0.7 * 5 = 3.5 -> not flagged
+
+    # Boundary: raw count exactly at the scaled threshold is not flagged (`<`, not `<=`).
+    _, _, _, qc_flag_boundary = ReefGuide.assess_reef_site(rel_pix, rotated, 9.0 / 0.7, 0.7)
+    @test qc_flag_boundary == 0
+end
+
