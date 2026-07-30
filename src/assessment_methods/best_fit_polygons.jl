@@ -131,14 +131,16 @@ function find_optimal_site_alignment(
     # We can then apply a heuristic to avoid near-identical assessments.
     @debug "$(now()) : Applying KD-tree filtering on $(nrow(lookup_tbl)) locations"
     inds = Matrix{Float32}([lookup_tbl.lons lookup_tbl.lats]')
+    n_locs = size(inds, 2)
     kdtree = KDTree(inds; leafsize=25)
-    t_ignore_idx = Dict(x => Int64[] for x in Threads.threadpooltids(:default))
-    Threads.@threads for i in 1:size(inds, 2)
-        ignore_idx = t_ignore_idx[Threads.threadid()]
-        if i in ignore_idx
-            continue
-        end
 
+    # Deterministic per-index computation: for each location, find its group of
+    # near-identical neighbours and the neighbour closest to the group's center.
+    # This step has no cross-iteration dependency, so it can be parallelized freely -
+    # unlike the dedup decision below, whose outcome depends on the order locations
+    # are visited in.
+    group_to_ignore = Vector{Vector{Int64}}(undef, n_locs)
+    Threads.@threads for i in 1:n_locs
         coords = inds[:, i]
 
         # If there are a group of pixels close to each other, only assess the one closest to
@@ -159,16 +161,26 @@ function find_optimal_site_alignment(
         )
 
         to_keep = idx[sel][closest_idx]
-        to_ignore = idx[sel][idx[sel] .!= to_keep]
-
-        append!(ignore_idx, to_ignore)
+        group_to_ignore[i] = idx[sel][idx[sel] .!= to_keep]
     end
+
+    # Sequential dedup pass: visit locations in a fixed order and accumulate the
+    # ignore set. A location already marked ignored by an earlier group is skipped
+    # rather than allowed to veto a different group - this is what makes the result
+    # independent of `JULIA_NUM_THREADS`/thread scheduling.
+    ignored = falses(n_locs)
+    for i in 1:n_locs
+        ignored[i] && continue
+        for j in group_to_ignore[i]
+            ignored[j] = true
+        end
+    end
+    ignore_locs = findall(ignored)
 
     # Create search tree
     tree = STRT.STRtree(lookup_tbl.geometry)
 
     # Search each location to assess
-    ignore_locs = unique(vcat(values(t_ignore_idx)...))
     assessment_locs = lookup_tbl[Not(ignore_locs), :]
     n_pixels = nrow(assessment_locs)
     @debug "$(now()) : KD-tree filtering - removed $(length(ignore_locs)) near-identical locations, now assessing $(n_pixels) locations"
