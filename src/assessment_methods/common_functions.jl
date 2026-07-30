@@ -229,27 +229,32 @@ function filter_sites(res_df::DataFrame)::DataFrame
     # Set unique IDs to ease search
     poly_set.row_ID = 1:nrow(poly_set)
 
-    # Create search tree
+    # Create search tree. Query results index into `poly_set` by position, which is only
+    # valid because the tree is built from `poly_set.geometry` in the same row order and
+    # `poly_set` is not reordered anywhere below.
     tree = STRT.STRtree(poly_set.geometry)
 
-    for row in eachrow(poly_set)
+    # Visit polygons from highest to lowest score. This guarantees that, at the point a
+    # polygon is visited, it is the best-scoring survivor among anything it overlaps - so
+    # every polygon it overlaps can be dropped outright, with no risk of a lower-scoring
+    # polygon (visited earlier only by row-order coincidence) incorrectly vetoing a
+    # different, non-overlapping polygon by proxy.
+    for row in eachrow(sort(poly_set, :score; rev=true))
         if row.row_ID ∈ ignore_list
             continue
         end
 
         poly = row.geometry
-        poly_interx = STRT.query.(Ref(tree), Ref(poly))
 
-        if length(poly_interx) > 1
-            intersecting_polys = poly_set[poly_interx, :]
+        # `STRT.query` only tests bounding-box intersection, so results still need
+        # an exact geometry check below before being treated as overlapping.
+        bbox_candidates = STRT.query(tree, poly)
+        poly_interx = filter(
+            i -> GO.intersects(poly, poly_set[i, :geometry]), bbox_candidates
+        )
 
-            # Find the ID of the polygon with the best score.
-            # Add polygon IDs with non-maximal score to the ignore list
-            best_poly_idx = argmax(intersecting_polys.score)
-            best_ID = intersecting_polys[best_poly_idx, :row_ID]
-            not_best_ID = intersecting_polys.row_ID .!= best_ID
-            append!(ignore_list, intersecting_polys[not_best_ID, :row_ID])
-        end
+        losers = filter(!=(row.row_ID), poly_set[poly_interx, :row_ID])
+        append!(ignore_list, losers)
     end
 
     return poly_set[poly_set.row_ID .∉ [unique(ignore_list)], :]

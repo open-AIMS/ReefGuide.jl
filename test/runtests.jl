@@ -4,6 +4,7 @@ using Aqua
 using DataFrames
 using Random
 import GeoInterface as GI
+import GeometryOps as GO
 
 @testset "Aqua" begin
     Aqua.test_undefined_exports(ReefGuide)
@@ -77,3 +78,64 @@ end
     @test qc_flag_boundary == 0
 end
 
+@testset "filter_sites overlap deduplication" begin
+    @testset "two overlapping plus one independent polygon" begin
+        a = _square(0.0, 0.0, 1.0)      # spans -1..1
+        b = _square(1.5, 0.0, 1.0)      # spans 0.5..2.5 -> overlaps a
+        independent = _square(10.0, 10.0, 1.0)
+
+        res_df = DataFrame(;
+            score=[5.0, 9.0, 1.0],
+            qc_flag=[0, 0, 0],
+            geometry=GI.Wrappers.Polygon[a, b, independent]
+        )
+        result = ReefGuide.filter_sites(res_df)
+        @test sort(result.score) == [1.0, 9.0]
+    end
+
+    @testset "no-overlap case passes everything through" begin
+        a = _square(0.0, 0.0, 1.0)
+        b = _square(10.0, 0.0, 1.0)
+        res_df = DataFrame(;
+            score=[5.0, 9.0], qc_flag=[0, 0], geometry=GI.Wrappers.Polygon[a, b]
+        )
+        result = ReefGuide.filter_sites(res_df)
+        @test sort(result.score) == [5.0, 9.0]
+    end
+
+    @testset "three-element overlap chain, A and C not overlapping" begin
+        # A(5) <-> B(9) overlap; B(9) <-> C(20) overlap; A and C do not overlap.
+        # The global best scorer (C) must survive, and A - which never overlaps
+        # C, the polygon that actually survives - must not be collaterally
+        # dropped just because it lost a local comparison to B.
+        a = _square(0.0, 0.0, 1.0)   # spans -1..1
+        b = _square(1.5, 0.0, 1.0)   # spans 0.5..2.5 -> overlaps a
+        c = _square(3.0, 0.0, 1.0)   # spans 2..4 -> overlaps b, not a
+
+        res_df = DataFrame(;
+            score=[5.0, 9.0, 20.0], qc_flag=[0, 0, 0], geometry=GI.Wrappers.Polygon[a, b, c]
+        )
+        result = ReefGuide.filter_sites(res_df)
+        @test sort(result.score) == [5.0, 20.0]
+    end
+
+    @testset "overlapping bboxes but non-overlapping exact geometry are both kept" begin
+        # Two triangles whose bounding boxes overlap but whose actual geometry does not -
+        # `STRT.query` only tests bbox intersection, so this only passes if the exact
+        # `GO.intersects` check is applied on top of it.
+        e = GI.Wrappers.Polygon([
+            GI.Wrappers.LinearRing([(0.0, 0.0), (4.0, 0.0), (0.0, 2.0), (0.0, 0.0)])
+        ])
+        f = GI.Wrappers.Polygon([
+            GI.Wrappers.LinearRing([(4.0, 4.0), (4.0, 1.0), (1.0, 4.0), (4.0, 4.0)])
+        ])
+        @test GI.extent(e).X[2] >= GI.extent(f).X[1]  # bboxes do overlap in X
+        @test !GO.intersects(e, f)                    # but the triangles themselves don't
+
+        res_df = DataFrame(;
+            score=[1.0, 2.0], qc_flag=[0, 0], geometry=GI.Wrappers.Polygon[e, f]
+        )
+        result = ReefGuide.filter_sites(res_df)
+        @test sort(result.score) == [1.0, 2.0]
+    end
+end
