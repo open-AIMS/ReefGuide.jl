@@ -13,7 +13,7 @@ using ArchGDAL, GeoParquet, Rasters
 using DataFrames, OrderedCollections, SparseArrays
 
 # Multithreading
-using FLoops, ThreadsX
+using FLoops
 
 # Precompilation
 using PrecompileSignatures: @precompile_signatures

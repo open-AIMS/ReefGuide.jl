@@ -4,7 +4,7 @@ using Aqua
 
 @testset "Aqua" begin
     Aqua.test_undefined_exports(ReefGuide)
-    Aqua.test_stale_deps(ReefGuide; ignore=[:GeoJSON])
+    Aqua.test_stale_deps(ReefGuide)
 end
 
 @testset "ReefGuide.jl" begin
