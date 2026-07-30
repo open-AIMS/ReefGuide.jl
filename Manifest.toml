@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "5ebbd77c2decd6aa0342d30e0c14b1913424f7c2"
+project_hash = "89d2d3d1ab601c8facfef68503ed877086a93681"
 
 [[deps.AbstractTrees]]
 git-tree-sha1 = "2d9c9a55f9c93e8887ad391fbae72f8ef55e1177"
@@ -296,12 +296,6 @@ weakdeps = ["IntervalSets", "LinearAlgebra", "StaticArrays"]
     ConstructionBaseLinearAlgebraExt = "LinearAlgebra"
     ConstructionBaseStaticArraysExt = "StaticArrays"
 
-[[deps.ContextVariablesX]]
-deps = ["Compat", "Logging", "UUIDs"]
-git-tree-sha1 = "25cc3803f1030ab855e383129dcd3dc294e322cc"
-uuid = "6add18c4-b38d-439d-96f6-d6bc489c04c5"
-version = "0.1.3"
-
 [[deps.CoordinateTransformations]]
 deps = ["LinearAlgebra", "StaticArrays"]
 git-tree-sha1 = "a692f5e257d332de1e554e4566a4e5a8a72de2b2"
@@ -490,18 +484,6 @@ version = "1.7.1"
 git-tree-sha1 = "b309b36a9e02fe7be71270dd8c0fd873625332b4"
 uuid = "411431e0-e8b7-467b-b5e0-f676ba4f2910"
 version = "0.1.6"
-
-[[deps.FLoops]]
-deps = ["BangBang", "Compat", "FLoopsBase", "InitialValues", "JuliaVariables", "MLStyle", "Serialization", "Setfield", "Transducers"]
-git-tree-sha1 = "0a2e5873e9a5f54abb06418d57a8df689336a660"
-uuid = "cc61a311-1640-44b5-9fba-1b764f453329"
-version = "0.2.2"
-
-[[deps.FLoopsBase]]
-deps = ["ContextVariablesX"]
-git-tree-sha1 = "656f7a6859be8673bf1f35da5670246b923964f7"
-uuid = "b9860ae5-e623-471e-878b-f6a53c775ea6"
-version = "0.1.1"
 
 [[deps.FNVHash]]
 git-tree-sha1 = "d6de2c735a8bffce9bc481942dfa453cc815357e"
@@ -903,12 +885,6 @@ deps = ["StyledStrings"]
 uuid = "ac6e5ff7-fb65-4e79-a425-ec3bc9c03011"
 version = "1.12.0"
 
-[[deps.JuliaVariables]]
-deps = ["MLStyle", "NameResolution"]
-git-tree-sha1 = "49fb3cb53362ddadb4415e9b73926d6b40709e70"
-uuid = "b14d175d-62b4-44ba-8fb7-3064adc8c3ec"
-version = "0.2.4"
-
 [[deps.Kerberos_krb5_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "0f2899fdadaab4b8f57db558ba21bdb4fb52f1f0"
@@ -1085,11 +1061,6 @@ git-tree-sha1 = "191686b1ac1ea9c89fc52e996ad15d1d241d1e33"
 uuid = "5ced341a-0733-55b8-9ab6-a4889d929147"
 version = "1.10.1+0"
 
-[[deps.MLStyle]]
-git-tree-sha1 = "bc38dff0548128765760c79eb7388a4b37fae2c8"
-uuid = "d8e11817-5142-5d16-987a-aa16d5891078"
-version = "0.4.17"
-
 [[deps.MPIABI_jll]]
 deps = ["Artifacts", "Hwloc_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "TOML"]
 git-tree-sha1 = "9be143b6045719e8fb019d2b3bc2aebad1184fef"
@@ -1160,12 +1131,6 @@ version = "0.3.4"
 [[deps.MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 version = "2025.11.4"
-
-[[deps.NameResolution]]
-deps = ["PrettyPrint"]
-git-tree-sha1 = "1a0fa0e9613f46c9b8c11eee38ebb4f590013c5e"
-uuid = "71a1bf82-56d0-4bbc-8a3c-48b961074391"
-version = "0.1.5"
 
 [[deps.NearestNeighbors]]
 deps = ["AbstractTrees", "Distances", "StaticArrays"]
@@ -1327,11 +1292,6 @@ git-tree-sha1 = "8b770b60760d4451834fe79dd483e318eee709c4"
 uuid = "21216c6a-2e73-6563-6e65-726566657250"
 version = "1.5.2"
 
-[[deps.PrettyPrint]]
-git-tree-sha1 = "632eb4abab3449ab30c5e1afaa874f0b98b586e4"
-uuid = "8162dcfd-2161-5ef2-ae6c-7681170c5f98"
-version = "0.2.0"
-
 [[deps.PrettyTables]]
 deps = ["Crayons", "LaTeXStrings", "Markdown", "PrecompileTools", "Printf", "REPL", "Reexport", "StringManipulation", "Tables"]
 git-tree-sha1 = "988ff909479c5661b24f756432127198a7e465d0"
@@ -1435,7 +1395,7 @@ uuid = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 version = "1.3.4"
 
 [[deps.ReefGuide]]
-deps = ["ArchGDAL", "CoordinateTransformations", "DataFrames", "Dates", "DiskArrays", "Distances", "ExtendableSparse", "FLoops", "GeoDataFrames", "GeoFormatTypes", "GeoInterface", "GeoParquet", "GeometryBasics", "GeometryOps", "Glob", "ImageIO", "Interpolations", "LibGEOS", "LinearAlgebra", "Logging", "Mmap", "NearestNeighbors", "OrderedCollections", "PrecompileSignatures", "PrecompileTools", "Proj", "Rasters", "Serialization", "SortTileRecursiveTree", "SparseArrays", "StaticArrays", "Statistics", "StructTypes"]
+deps = ["ArchGDAL", "CoordinateTransformations", "DataFrames", "Dates", "DiskArrays", "Distances", "ExtendableSparse", "GeoDataFrames", "GeoFormatTypes", "GeoInterface", "GeoParquet", "GeometryBasics", "GeometryOps", "Glob", "ImageIO", "Interpolations", "LibGEOS", "LinearAlgebra", "Logging", "Mmap", "NearestNeighbors", "OrderedCollections", "PrecompileSignatures", "PrecompileTools", "Proj", "Rasters", "Serialization", "SortTileRecursiveTree", "SparseArrays", "StaticArrays", "Statistics", "StructTypes"]
 path = "."
 uuid = "cee0a5fb-9790-4c4c-b8b7-e40ecbebeb72"
 version = "0.1.12"

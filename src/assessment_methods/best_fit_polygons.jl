@@ -190,8 +190,8 @@ function find_optimal_site_alignment(
     best_rotation = zeros(Int64, n_pixels)
     quality_flag = zeros(Int64, n_pixels)
 
-    FLoops.assistant(false)
-    @floop for (i, pix) in enumerate(eachrow(assessment_locs))
+    Threads.@threads for i in 1:n_pixels
+        pix = assessment_locs[i, :]
         lon = pix.lons
         lat = pix.lats
 
