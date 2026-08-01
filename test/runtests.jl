@@ -24,6 +24,58 @@ end
     )
 end
 
+@testset "load_target_region error handling with scope" begin
+    # A bogus region_id must fail before `scope` is ever consulted, regardless
+    # of which SpatialScope subtype is passed.
+    @test_throws KeyError ReefGuide.load_target_region(;
+        region_id="bogus",
+        data_source_directory=tempdir(),
+        scope=ReefGuide.BBoxScope(144.0, -17.0, 146.0, -15.0)
+    )
+end
+
+@testset "apply_spatial_scope" begin
+    lons = [144.0, 144.5, 145.0, 145.5, 146.0]
+    lats = [-16.0, -16.2, -16.4, -16.6, -16.8]
+    tbl = DataFrame(; lons=lons, lats=lats, value=1:5)
+
+    @testset "BBoxScope: vectorized range predicate, bounds inclusive" begin
+        scope = ReefGuide.BBoxScope(144.4, -16.5, 145.1, -16.1)
+        result = ReefGuide.apply_spatial_scope(tbl, scope)
+        # Rows 2 (144.5,-16.2) and 3 (145.0,-16.4) fall within the box.
+        @test sort(result.value) == [2, 3]
+
+        # Un-scoped table is untouched (new DataFrame returned, not a view/mutation).
+        @test nrow(tbl) == 5
+
+        # Bounds are inclusive: a bbox tight on a single point still includes it.
+        tight_scope = ReefGuide.BBoxScope(lons[1], lats[1], lons[1], lats[1])
+        tight_result = ReefGuide.apply_spatial_scope(tbl, tight_scope)
+        @test collect(tight_result.value) == [1]
+    end
+
+    @testset "PolygonScope: point-in-polygon via GeometryOps.within" begin
+        # Triangle covering roughly rows 1-3 (144.0-145.0, -16.0 to -16.4) but not 4-5.
+        ring = GI.Wrappers.LinearRing([
+            (143.9, -15.9), (145.2, -15.9), (143.9, -16.5), (143.9, -15.9)
+        ])
+        poly = GI.Wrappers.Polygon([ring])
+        scope = ReefGuide.PolygonScope(poly)
+        result = ReefGuide.apply_spatial_scope(tbl, scope)
+        @test Set(result.value) ⊆ Set([1, 2, 3])
+        @test 1 ∈ result.value
+    end
+
+    @testset "no scope on load_target_region call path is unaffected" begin
+        # Sanity: apply_spatial_scope is never reached when scope is `nothing`
+        # (checked via the `!isnothing(scope)` guard in load_target_region), so
+        # there's no dispatch method for `Nothing` — confirm that's still true,
+        # since a stray `apply_spatial_scope(df, nothing)` method would signal
+        # the guard was bypassed somewhere.
+        @test !hasmethod(ReefGuide.apply_spatial_scope, Tuple{DataFrame,Nothing})
+    end
+end
+
 @testset "find_optimal_site_alignment KD-tree filtering is deterministic" begin
     # Regression test for thread-affinity nondeterminism: the same input must produce
     # bit-identical output regardless of how `Threads.@threads` schedules iterations,
