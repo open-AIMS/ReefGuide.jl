@@ -270,20 +270,6 @@ function assess_location_quality(
     res::Float64;
     target_crs=EPSG(4326)
 )::Vector{Int8}
-    # Create square search box
-    res = degrees_to_meters(res, lookup_tbl.lats[1])
-    x_dist = ceil(Int64, res * 3)  # Search area immediate around target pixel
-    y_dist = x_dist
-    @debug "Initial search box: $(x_dist)m * $(y_dist)m with res: $(round(res; digits=2))m^2"
-    search_box = initial_search_box(
-        (lookup_tbl.lons[1], lookup_tbl.lats[1]),
-        x_dist * 0.9, # Approach uses the "touches" algorithm to select pixels so reduce
-        y_dist * 0.9, # size of polygon to ensure only relevant pixels are "touched"
-        target_crs
-    )
-
-    max_count = floor(Int64, (x_dist * y_dist) / res^2)
-
     assessment_locs = lookup_tbl[assessment_idx, :]
 
     # No pixels pass criteria — return empty results immediately
@@ -291,36 +277,38 @@ function assess_location_quality(
         return Vector{Int8}()
     end
 
-    # Create tree specific to search area
-    time_taken = @elapsed begin
-        tree = STRT.STRtree(assessment_locs.geometry)
+    # Build a BitMatrix over the full region extent marking only criterion-passing
+    # pixels. This replicates the original STRtree semantics — only pixels that pass
+    # criteria count as neighbours — but avoids per-pixel spatial tree queries.
+    #
+    # The search window is ±1 grid step in each direction (3×3 = 9 cells), which
+    # matches the original `ceil(res_metres * 3)` search box for all GBR latitudes.
+    # max_count ≈ floor((3*res_m)² / res_m²) = 9.
+    lo_max = maximum(lookup_tbl.lon_idx)
+    la_max = maximum(lookup_tbl.lat_idx)
+    const_max_count = 9
+
+    indicator = falses(lo_max, la_max)
+    for (lo, la) in zip(assessment_locs.lon_idx, assessment_locs.lat_idx)
+        @inbounds indicator[lo, la] = true
     end
-    @debug "Took $(time_taken) seconds to create search-specific tree"
 
     n_pixels_to_assess = nrow(assessment_locs)
-    results = zeros(Int8, n_pixels_to_assess)  # Percent value 0 - 100
+    results = zeros(Int8, n_pixels_to_assess)
 
     @debug "$(now()) : Assessment start"
     Threads.@threads for i in 1:n_pixels_to_assess
-        pix = assessment_locs[i, :]
-
-        moved_box::GI.Wrappers.Polygon = move_geom(
-            search_box,
-            (pix.lons, pix.lats)
-        )
-
-        # Find pixels the search area
-        pixel_idx = STRT.query(tree, moved_box)
-        n_matches = length(pixel_idx)
-
-        # Skip if no relevant pixels or if the number of suitable pixels are below required
-        # threshold
-        if n_matches == 0
-            continue
+        lo = Int(assessment_locs.lon_idx[i])
+        la = Int(assessment_locs.lat_idx[i])
+        cnt = 0
+        for dlo in -1:1, dla in -1:1
+            nlo = lo + dlo
+            nla = la + dla
+            if 1 <= nlo <= lo_max && 1 <= nla <= la_max
+                @inbounds cnt += indicator[nlo, nla]
+            end
         end
-
-        # Taking floor to be conservative in estimates
-        results[i] = floor(Int8, (n_matches / max_count) * 100)
+        results[i] = floor(Int8, (cnt / const_max_count) * 100)
     end
     @debug "$(now()) : Assessment finished: $(count(results .> 0.0)) / $(n_pixels_to_assess) met criteria"
 
