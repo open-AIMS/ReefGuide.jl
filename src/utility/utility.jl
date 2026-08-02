@@ -11,6 +11,8 @@ using
     Interpolations
 
 import GeoDataFrames as GDF
+import GeoInterface as GI
+import GeometryOps as GO
 import SortTileRecursiveTree as STRT
 
 include("types.jl")
