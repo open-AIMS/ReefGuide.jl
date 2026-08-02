@@ -5,6 +5,10 @@
 const SLOPES_LOOKUP_SUFFIX = "_valid_slopes_lookup.arrow"
 const SLOPES_BOUNDS_SUFFIX = "_valid_slopes_bounds.json"
 const SLOPES_RASTER_SUFFIX = "_valid_slopes.tif"
+
+function get_bounds_sidecar_path(slope_file_path::String)::String
+    return replace(slope_file_path, SLOPES_LOOKUP_SUFFIX => SLOPES_BOUNDS_SUFFIX)
+end
 const DEFAULT_CANONICAL_REEFS_FILE_NAME = "rrap_canonical_outlines.gpkg"
 
 # =============================================================================
@@ -578,6 +582,18 @@ struct PolygonScope <: SpatialScope
     geometry::Any
 end
 
+function _build_scope_mask(lons, lats, scope::BBoxScope)::BitVector
+    return (
+        (scope.min_lon .<= lons .<= scope.max_lon) .&
+        (scope.min_lat .<= lats .<= scope.max_lat)
+    )
+end
+
+function _build_scope_mask(lons, lats, scope::PolygonScope)::BitVector
+    points = GI.Wrappers.Point.(lons, lats)
+    return GO.within.(points, Ref(scope.geometry))
+end
+
 """
     apply_spatial_scope(slope_table::DataFrame, scope::SpatialScope)::DataFrame
 
@@ -595,18 +611,77 @@ A new `DataFrame` containing only the rows within `scope`.
 function apply_spatial_scope(slope_table::DataFrame, scope::BBoxScope)::DataFrame
     lons = slope_table.lons
     lats = slope_table.lats
-    mask =
-        (scope.min_lon .<= lons .<= scope.max_lon) .&
-        (scope.min_lat .<= lats .<= scope.max_lat)
+    mask = _build_scope_mask(lons, lats, scope)
     return slope_table[mask, :]
 end
 
 function apply_spatial_scope(slope_table::DataFrame, scope::PolygonScope)::DataFrame
     lons = slope_table.lons
     lats = slope_table.lats
-    points = GI.Wrappers.Point.(lons, lats)
-    mask = GO.within.(points, Ref(scope.geometry))
+    mask = _build_scope_mask(lons, lats, scope)
     return slope_table[mask, :]
+end
+
+"""Load pre-computed column bounds from a JSON sidecar file."""
+function load_bounds_from_sidecar(sidecar_path::String)::BoundedCriteriaDict
+    raw = JSON3.read(read(sidecar_path, String), Dict{String,Any})
+    result = BoundedCriteriaDict()
+    for (k, v) in raw
+        criteria_id = String(k)
+        if haskey(ASSESSMENT_CRITERIA, criteria_id)
+            result[criteria_id] = BoundedCriteria(;
+                metadata=ASSESSMENT_CRITERIA[criteria_id],
+                bounds=Bounds(; min=Float32(v["min"]), max=Float32(v["max"]))
+            )
+        end
+    end
+    return result
+end
+
+"""Write column bounds to a JSON sidecar file."""
+function write_bounds_sidecar(bounds::BoundedCriteriaDict, sidecar_path::String)
+    d = Dict{String,Any}(
+        k => Dict("min" => Float64(v.bounds.min), "max" => Float64(v.bounds.max))
+        for (k, v) in bounds
+    )
+    open(sidecar_path, "w") do io
+        JSON3.write(io, d)
+    end
+    return nothing
+end
+
+"""
+Load rows from an Arrow file that fall within the given spatial scope.
+
+For `nothing` (full-region jobs), falls back to a direct `DataFrame(Arrow.Table(path))`.
+For `BBoxScope`/`PolygonScope`, decompresses only the `lons` and `lats` columns first to
+build a row mask, then materialises matching rows column-by-column from the Arrow.Table.
+The Arrow.Table is explicitly released after the column loop so its decompressed column
+cache can be GC'd; settled heap after return equals only the matched-rows DataFrame.
+
+Note: peak memory during the column loop still approaches the full decompressed region
+size (~2–3 GB) because Arrow.Table caches decompressed column buffers internally.
+"""
+function load_scoped_arrow_table(
+    path::String, scope::Union{SpatialScope,Nothing}
+)::DataFrame
+    if isnothing(scope)
+        return DataFrame(Arrow.Table(path))
+    end
+
+    tbl = Arrow.Table(path)
+    lons = Tables.getcolumn(tbl, :lons)
+    lats = Tables.getcolumn(tbl, :lats)
+    mask = _build_scope_mask(lons, lats, scope)
+
+    result = DataFrame()
+    for colname in Tables.columnnames(tbl)
+        col = Tables.getcolumn(tbl, colname)
+        result[!, colname] = col[mask]
+    end
+    tbl = nothing
+    GC.gc()
+    return result
 end
 
 """
@@ -652,14 +727,54 @@ function load_target_region(;
         slope_file_path = joinpath(data_source_directory, slope_filename)
         @debug "Loading slope table" file_path = slope_file_path
 
-        load_time = @elapsed begin
-            slope_table::DataFrame = DataFrame(Arrow.Table(slope_file_path))
+        sidecar_path = get_bounds_sidecar_path(slope_file_path)
+
+        if isfile(sidecar_path)
+            bounds::BoundedCriteriaDict = load_bounds_from_sidecar(sidecar_path)
+            @debug "Loaded criteria bounds from sidecar" sidecar_path
+
+            load_time = @elapsed begin
+                slope_table::DataFrame = load_scoped_arrow_table(slope_file_path, scope)
+            end
+            @info """
+                Loaded slope table for $(region_metadata.id)
+                    num_locations = $(nrow(slope_table))
+                    Load time = $(load_time)
+            """
+        else
+            @warn "Bounds sidecar not found for $(slope_file_path); computing from full table (slow path)"
+
+            load_time = @elapsed begin
+                slope_table = DataFrame(Arrow.Table(slope_file_path))
+            end
+            @info """
+                Loaded slope table for $(region_metadata.id)
+                    num_locations = $(nrow(slope_table))
+                    Load time = $(load_time)
+            """
+
+            # Add coordinate columns before scope check
+            if "lons" ∉ names(slope_table)
+                add_lat_long_columns_to_dataframe(slope_table)
+            end
+
+            bounds = derive_criteria_bounds_from_slope_table(slope_table, region_metadata)
+            write_bounds_sidecar(bounds, sidecar_path)
+
+            # Narrow the slope table to the requested spatial scope, if any.
+            if !isnothing(scope)
+                scope_time = @elapsed begin
+                    slope_table = apply_spatial_scope(slope_table, scope)
+                end
+                @info """
+                    Applied spatial scope to slope table for $(region_metadata.id)
+                        scope = $(typeof(scope))
+                        num_locations (scoped) = $(nrow(slope_table))
+                        Scope filter time = $(scope_time)
+                """
+            end
         end
-        @info """
-            Loaded slope table for $(region_metadata.id)
-                num_locations = $(nrow(slope_table))
-                Load time = $(load_time)
-        """
+
         # size = $(Base.summarysize(slope_table) / 1024^2)
 
         # Add coordinate columns for spatial referencing
@@ -686,28 +801,6 @@ function load_target_region(;
 
             # Use criteria ID as the raster layer name
             push!(data_names, criteria.id)
-        end
-
-        # Compute regional criteria bounds from the full (unscoped) slope table,
-        # so scoped and unscoped loads normalize criteria identically.
-        bounds::BoundedCriteriaDict = derive_criteria_bounds_from_slope_table(
-            slope_table, region_metadata
-        )
-
-        # Narrow the slope table to the requested spatial scope, if any. Applied
-        # after bounds computation and after the full parquet load (see
-        # `scratch/bbox_spike.jl` for the perf de-risking spike this pattern is
-        # based on: vectorized :lons/:lats masking, not row-wise `filter`).
-        if !isnothing(scope)
-            scope_time = @elapsed begin
-                slope_table = apply_spatial_scope(slope_table, scope)
-            end
-            @info """
-                Applied spatial scope to slope table for $(region_metadata.id)
-                    scope = $(typeof(scope))
-                    num_locations (scoped) = $(nrow(slope_table))
-                    Scope filter time = $(scope_time)
-            """
         end
 
         extent_path = joinpath(
