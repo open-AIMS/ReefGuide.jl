@@ -547,8 +547,72 @@ function load_canonical_reefs(
 end
 
 """
+Spatial scope used to narrow a region's slope table to a sub-area, for the
+fast/preview assessment path (see
+`.claude/plans/2026-07-31_slow_fast_assessment_feature.md`).
+
+Concrete subtypes: [`BBoxScope`](@ref), [`PolygonScope`](@ref).
+"""
+abstract type SpatialScope end
+
+"""
+    BBoxScope(min_lon, min_lat, max_lon, max_lat)
+
+Axis-aligned lon/lat bounding box scope. Bounds are inclusive.
+"""
+struct BBoxScope <: SpatialScope
+    min_lon::Float64
+    min_lat::Float64
+    max_lon::Float64
+    max_lat::Float64
+end
+
+"""
+    PolygonScope(geometry)
+
+Arbitrary polygon scope. `geometry` must be a GeoInterface.jl-compatible
+polygon (e.g. `GeoInterface.Wrappers.Polygon`, or an `ArchGDAL` geometry).
+"""
+struct PolygonScope <: SpatialScope
+    geometry::Any
+end
+
+"""
+    apply_spatial_scope(slope_table::DataFrame, scope::SpatialScope)::DataFrame
+
+Filter `slope_table` down to rows whose `:lons`/`:lats` fall within `scope`.
+
+# Arguments
+- `slope_table` : Slope table already carrying `:lons`/`:lats` columns (see
+  `add_lat_long_columns_to_dataframe`).
+- `scope` : A [`BBoxScope`](@ref) (vectorized range predicate) or
+  [`PolygonScope`](@ref) (point-in-polygon test via `GeometryOps.within`).
+
+# Returns
+A new `DataFrame` containing only the rows within `scope`.
+"""
+function apply_spatial_scope(slope_table::DataFrame, scope::BBoxScope)::DataFrame
+    lons = slope_table.lons
+    lats = slope_table.lats
+    mask =
+        (scope.min_lon .<= lons .<= scope.max_lon) .&
+        (scope.min_lat .<= lats .<= scope.max_lat)
+    return slope_table[mask, :]
+end
+
+function apply_spatial_scope(slope_table::DataFrame, scope::PolygonScope)::DataFrame
+    lons = slope_table.lons
+    lats = slope_table.lats
+    points = GI.Wrappers.Point.(lons, lats)
+    mask = GO.within.(points, Ref(scope.geometry))
+    return slope_table[mask, :]
+end
+
+"""
     load_target_region(;
-        region_id::String, data_source_directory::String
+        region_id::String,
+        data_source_directory::String,
+        scope::Union{SpatialScope,Nothing}=nothing
     )::RegionalDataEntry
 
 Load data for a specific target region.
@@ -556,12 +620,21 @@ Load data for a specific target region.
 # Arguments
 - `region_id` : Unique identifier for the target region
 - `data_source_directory` : Location to find data files
+- `scope` : Optional [`SpatialScope`](@ref) (bbox or polygon). When provided,
+  the returned `slope_table` is narrowed to locations within `scope` (applied
+  in-memory on `:lons`/`:lats` after the full region parquet is loaded — see
+  the Phase 1 spike in `scratch/bbox_spike.jl`). Regional criteria bounds are
+  always computed from the *full* region table regardless of `scope`, so
+  scoped and unscoped loads normalize criteria identically. When `nothing`
+  (the default), behaviour is unchanged from before `scope` existed.
 
 # Returns
-`RegionalDataEntry` for the specified region.
+`RegionalDataEntry` for the specified region, restricted to `scope` if given.
 """
 function load_target_region(;
-    region_id::String, data_source_directory::String
+    region_id::String,
+    data_source_directory::String,
+    scope::Union{SpatialScope,Nothing}=nothing
 )::RegionalDataEntry
     try
         # Get the regional metadata
@@ -614,10 +687,27 @@ function load_target_region(;
             push!(data_names, criteria.id)
         end
 
-        # Compute regional criteria bounds from slope table data
+        # Compute regional criteria bounds from the full (unscoped) slope table,
+        # so scoped and unscoped loads normalize criteria identically.
         bounds::BoundedCriteriaDict = derive_criteria_bounds_from_slope_table(
             slope_table, region_metadata
         )
+
+        # Narrow the slope table to the requested spatial scope, if any. Applied
+        # after bounds computation and after the full parquet load (see
+        # `scratch/bbox_spike.jl` for the perf de-risking spike this pattern is
+        # based on: vectorized :lons/:lats masking, not row-wise `filter`).
+        if !isnothing(scope)
+            scope_time = @elapsed begin
+                slope_table = apply_spatial_scope(slope_table, scope)
+            end
+            @info """
+                Applied spatial scope to slope table for $(region_metadata.id)
+                    scope = $(typeof(scope))
+                    num_locations (scoped) = $(nrow(slope_table))
+                    Scope filter time = $(scope_time)
+            """
+        end
 
         extent_path = joinpath(
             data_source_directory, "$(region_metadata.id)$(SLOPES_RASTER_SUFFIX)"
