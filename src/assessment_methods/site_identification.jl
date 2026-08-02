@@ -134,7 +134,7 @@ function assess_region_quality(
         target_crs=params.region_data.crs
     )
 
-    region_dims = maximum(lookup_tbl.lon_idx), maximum(lookup_tbl.lat_idx)
+    region_dims = size(params.region_data.valid_extent)
     mask_size_MB = prod(region_dims) / 1024^2  # of Int8
 
     @debug "$(now()) : Marking results in raster"

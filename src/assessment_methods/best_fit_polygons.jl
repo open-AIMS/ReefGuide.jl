@@ -200,11 +200,10 @@ function find_optimal_site_alignment(
         lon = pix.lons
         lat = pix.lats
 
-        rotated_copy::Vector{GI.Wrappers.Polygon} =
-            move_geom.(
-                rotated_geoms,
-                Ref((lon, lat))
-            )
+        rotated_copy::Vector{GI.Wrappers.Polygon} = move_geom.(
+            rotated_geoms,
+            Ref((lon, lat))
+        )
 
         # Find pixels within each rotated search area
         in_pixels = unique(reduce(vcat, STRT.query.(Ref(tree), rotated_copy)))
@@ -286,6 +285,11 @@ function assess_location_quality(
     max_count = floor(Int64, (x_dist * y_dist) / res^2)
 
     assessment_locs = lookup_tbl[assessment_idx, :]
+
+    # No pixels pass criteria — return empty results immediately
+    if nrow(assessment_locs) == 0
+        return Vector{Int8}()
+    end
 
     # Create tree specific to search area
     time_taken = @elapsed begin
