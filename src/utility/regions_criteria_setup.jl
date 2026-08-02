@@ -2,7 +2,8 @@
 # Constants and Configuration
 # =============================================================================
 
-const SLOPES_LOOKUP_SUFFIX = "_valid_slopes_lookup.parq"
+const SLOPES_LOOKUP_SUFFIX = "_valid_slopes_lookup.arrow"
+const SLOPES_BOUNDS_SUFFIX = "_valid_slopes_bounds.json"
 const SLOPES_RASTER_SUFFIX = "_valid_slopes.tif"
 const DEFAULT_CANONICAL_REEFS_FILE_NAME = "rrap_canonical_outlines.gpkg"
 
@@ -647,12 +648,12 @@ function load_target_region(;
         data_names = String[]
 
         # Load slope table containing valid reef coordinates and criteria values
-        slope_filename = get_slope_parquet_filename(region_metadata)
+        slope_filename = get_slope_filename(region_metadata)
         slope_file_path = joinpath(data_source_directory, slope_filename)
         @debug "Loading slope table" file_path = slope_file_path
 
         load_time = @elapsed begin
-            slope_table::DataFrame = GeoParquet.read(slope_file_path)
+            slope_table::DataFrame = DataFrame(Arrow.Table(slope_file_path))
         end
         @info """
             Loaded slope table for $(region_metadata.id)

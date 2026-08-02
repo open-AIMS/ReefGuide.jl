@@ -55,11 +55,11 @@ Generate the filename for slope lookup data for a given region.
 - `region::RegionMetadata` : Region metadata containing ID
 
 # Returns
-String filename in format "{region_id}_slope_lookup.parq"
+String filename in format "{region_id}_slope_lookup.arrow"
 """
-function get_slope_parquet_filename(region::RegionMetadata)::String
+function get_slope_filename(region::RegionMetadata)::String
     filename = "$(region.id)$(SLOPES_LOOKUP_SUFFIX)"
-    @debug "Generated slope parquet filename" region_id = region.id filename
+    @debug "Generated slope filename" region_id = region.id filename
     return filename
 end
 

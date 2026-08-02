@@ -7,7 +7,8 @@ using Base.Threads
 using Glob, Serialization
 
 # Geospatial
-using ArchGDAL, GeoParquet, Rasters
+using ArchGDAL, Arrow, Rasters
+using JSON3, Tables
 
 # Collections
 using DataFrames, OrderedCollections, SparseArrays
@@ -37,8 +38,8 @@ export initialize_data,
 @setup_workload begin
     @compile_workload begin
         # Enforce precompilation of specific geospatial read/write methods
-        tmp_parq = GeoParquet.read(joinpath(pkgdir(ReefGuide), "assets", "dummy.parq"))
-        Base.summarysize(tmp_parq)
+        tmp_arrow = DataFrame(Arrow.Table(joinpath(pkgdir(ReefGuide), "assets", "dummy.arrow")))
+        Base.summarysize(tmp_arrow)
         GDF.read(joinpath(pkgdir(ReefGuide), "assets", "dummy.gpkg"))
 
         tmpfile = tempname()
