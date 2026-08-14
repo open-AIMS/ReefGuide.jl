@@ -600,8 +600,8 @@ end
 Filter `slope_table` down to rows whose `:lons`/`:lats` fall within `scope`.
 
 # Arguments
-- `slope_table` : Slope table already carrying `:lons`/`:lats` columns (see
-  `add_lat_long_columns_to_dataframe`).
+- `slope_table` : Slope table already carrying `:lons`/`:lats` columns (populated
+  upstream when the slope table is created).
 - `scope` : A [`BBoxScope`](@ref) (vectorized range predicate) or
   [`PolygonScope`](@ref) (point-in-polygon test via `GeometryOps.within`).
 
@@ -753,11 +753,6 @@ function load_target_region(;
                     Load time = $(load_time)
             """
 
-            # Add coordinate columns before scope check
-            if "lons" ∉ names(slope_table)
-                add_lat_long_columns_to_dataframe(slope_table)
-            end
-
             bounds = derive_criteria_bounds_from_slope_table(slope_table, region_metadata)
             write_bounds_sidecar(bounds, sidecar_path)
 
@@ -776,11 +771,6 @@ function load_target_region(;
         end
 
         # size = $(Base.summarysize(slope_table) / 1024^2)
-
-        # Add coordinate columns for spatial referencing
-        if "lons" ∉ names(slope_table)
-            add_lat_long_columns_to_dataframe(slope_table)
-        end
 
         # Filter criteria list to only those available for this region
         available_criteria::Vector{String} = region_metadata.available_criteria

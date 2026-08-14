@@ -63,27 +63,6 @@ function get_slope_filename(region::RegionMetadata)::String
     return filename
 end
 
-"""
-Add longitude and latitude columns to a DataFrame based on geometry centroids.
-
-Modifies the input DataFrame by adding 'lons' and 'lats' columns extracted
-from the centroid coordinates of each geometry feature.
-
-# Arguments
-- `df::DataFrame` : DataFrame with geometry column containing spatial features
-"""
-function add_lat_long_columns_to_dataframe(df::DataFrame)::Nothing
-    @debug "Adding lat/long columns to DataFrame" num_rows = nrow(df)
-    # Extract coordinate tuples from geometry centroids
-    coords = GI.coordinates.(df.geometry)
-    # Add longitude column (first coordinate)
-    df[!, :lons] .= first.(coords)
-    # Add latitude column (second coordinate)
-    df[!, :lats] .= last.(coords)
-    @debug "Successfully added coordinate columns"
-    return nothing
-end
-
 function dms_to_decimal(d, m, s, o)
     # 40°26'46"N
 

@@ -44,7 +44,9 @@ function assess_reef_site(
     qc_flag = zeros(Int64, n_rotations)
 
     for (j, r) in enumerate(rotated)
-        score[j] = count(GO.contains.(Ref(r), rel_pix.geometry))
+        score[j] = count(
+            GO.contains(r, (lon, lat)) for (lon, lat) in zip(rel_pix.lons, rel_pix.lats)
+        )
 
         if score[j] < suitability_threshold * max_count
             # Early exit as there's no point in searching further.
@@ -139,6 +141,16 @@ function find_optimal_site_alignment(
     n_locs = size(inds, 2)
     kdtree = KDTree(inds; leafsize=25)
 
+    # Bounding radius of the search box, computed once as it is constant across
+    # rotations - the box is rigid, so rotating it changes its orientation but not
+    # its size, and therefore not the distance from its centre to its farthest
+    # vertex. Used below as a superset (candidate) query against the KD-tree, in
+    # the same role the STRtree bounding-box query previously played.
+    box_center = GO.centroid(search_box)
+    box_radius = maximum(
+        p -> hypot(p[1] - box_center[1], p[2] - box_center[2]), get_points(search_box)
+    )
+
     # Deterministic per-index computation: for each location, find its group of
     # near-identical neighbours and the neighbour closest to the group's center.
     # This step has no cross-iteration dependency, so it can be parallelized freely -
@@ -182,9 +194,6 @@ function find_optimal_site_alignment(
     end
     ignore_locs = findall(ignored)
 
-    # Create search tree
-    tree = STRT.STRtree(lookup_tbl.geometry)
-
     # Search each location to assess
     assessment_locs = lookup_tbl[Not(ignore_locs), :]
     n_pixels = nrow(assessment_locs)
@@ -205,8 +214,11 @@ function find_optimal_site_alignment(
             Ref((lon, lat))
         )
 
-        # Find pixels within each rotated search area
-        in_pixels = unique(reduce(vcat, STRT.query.(Ref(tree), rotated_copy)))
+        # Find candidate pixels within the search box's bounding radius. This is a
+        # superset query (same role the STRtree bbox query previously played) - the
+        # exact per-rotation containment check happens in `assess_reef_site()` via
+        # `GO.contains`.
+        in_pixels = inrange(kdtree, Float32[lon, lat], box_radius)
         relevant_pixels = lookup_tbl[in_pixels, :]
         n_matches = nrow(relevant_pixels)
 

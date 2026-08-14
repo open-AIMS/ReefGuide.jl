@@ -113,7 +113,9 @@ end
     # 9 points, all contained in a 10x10 search box centered on them.
     box = _square(2.0, 2.0, 5.0)
     pts = GI.Wrappers.Point[GI.Wrappers.Point(x, y) for x in 1:3, y in 1:3][:]
-    rel_pix = DataFrame(; geometry=pts)
+    rel_pix = DataFrame(;
+        geometry=pts, lons=first.(GI.coordinates.(pts)), lats=last.(GI.coordinates.(pts))
+    )
     rotated = GI.Wrappers.Polygon[box]
 
     # raw count is 9; scaled threshold (0.7 * max_count) must be compared on the
