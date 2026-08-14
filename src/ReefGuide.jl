@@ -38,7 +38,9 @@ export initialize_data,
 @setup_workload begin
     @compile_workload begin
         # Enforce precompilation of specific geospatial read/write methods
-        tmp_arrow = DataFrame(Arrow.Table(joinpath(pkgdir(ReefGuide), "assets", "dummy.arrow")))
+        tmp_arrow = DataFrame(
+            Arrow.Table(joinpath(pkgdir(ReefGuide), "assets", "dummy.arrow"))
+        )
         Base.summarysize(tmp_arrow)
         GDF.read(joinpath(pkgdir(ReefGuide), "assets", "dummy.gpkg"))
 
