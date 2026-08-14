@@ -624,7 +624,7 @@ end
 
 """Load pre-computed column bounds from a JSON sidecar file."""
 function load_bounds_from_sidecar(sidecar_path::String)::BoundedCriteriaDict
-    raw = JSON3.read(read(sidecar_path, String), Dict{String,Any})
+    raw = JSON3.read(Base.read(sidecar_path, String), Dict{String,Any})
     result = BoundedCriteriaDict()
     for (k, v) in raw
         criteria_id = String(k)
