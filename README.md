@@ -278,18 +278,9 @@ data/
 
 ## Tagging and releases
 
-### Create tag
+### Create Release and Tag
 
-Ensure version is aligned with `Project.toml`
-
-Create tag
-
-```bash
-git tag v0.1.0
-```
-
-Then to push the tag
-
-```bash
-git push origin main --tags
-```
+1. Bump the version in `Project.toml`; commit and push.
+2. [Draft new release in Github](https://github.com/open-AIMS/ReefGuide.jl/releases/new) Ensure that the tag is in `vX.Y.Z` form.
+3. Ask Juliabot to register the new package version by creating a new issue in this repo with `@JuliaRegistrator register` in the description.
+4. Update [ReefGuideWorker.jl](https://github.com/open-AIMS/ReefGuideWorker.jl) to use the new version
