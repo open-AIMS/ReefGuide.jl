@@ -164,6 +164,67 @@ function assess_region_quality(
     return Raster(params.region_data.valid_extent; data=indicator, missingval=0)
 end
 
+"""
+    assess_region_score(
+        params::RegionalAssessmentParameters
+    )::Raster
+
+Continuous MCDA suitability band for a region, in `[0, 1]` where `1` = a perfect
+match across all criteria.
+
+Each valid pixel's raw criteria values are mapped to per-criterion `[0,1]`
+suitability via the preference function keyed by each criterion's `direction`, then
+combined as a per-criterion weighted mean. This is computed alongside
+[`assess_region_quality`](@ref) and does not drive pixel selection: the boolean
+suitable-pixel set is still the pure AND-gate of
+[`filter_lookup_table_by_criteria`](@ref). The score is scattered over every valid
+pixel in the region's lookup table, not just the boolean-suitable subset.
+
+# Arguments
+- `params` : RegionalAssessmentParameters
+
+# Returns
+Raster of `Float32` MCDA suitability scores, `missingval = 0`.
+"""
+function assess_region_score(
+    params::RegionalAssessmentParameters
+)::Raster
+    @debug "$(now()) : Creating MCDA suitability score band for region"
+
+    lookup_tbl = params.region_data.slope_table
+
+    # Builds out a set of criteria filters using the regional criteria.
+    # NOTE this will only score over available criteria
+    filters = build_criteria_bounds_from_regional_criteria(params.regional_criteria)
+
+    @debug "$(now()) : Scoring lookup table against criteria preference functions"
+    scores::Vector{Float32} = score_lookup_table_by_criteria(lookup_tbl, filters)
+
+    region_dims = size(params.region_data.valid_extent)
+    band_size_MB = prod(region_dims) * sizeof(Float32) / 1024^2
+
+    @debug "$(now()) : Marking scores in raster"
+    # Arbitrary threshold - use sparse matrices if likely to exceed memory
+    if band_size_MB < 700
+        @debug "$(now()) : Creating score band as a regular matrix (est. size: $(band_size_MB))"
+        indicator = zeros(Float32, region_dims...)
+
+        Threads.@threads for i in eachindex(scores)
+            indicator[lookup_tbl.lon_idx[i], lookup_tbl.lat_idx[i]] = scores[i]
+        end
+    else
+        @debug "$(now()) : Creating score band as a sparse matrix (est. full size: $(band_size_MB))"
+
+        indicator = ExtendableSparseMatrix(
+            lookup_tbl.lon_idx, lookup_tbl.lat_idx, scores, region_dims...
+        )
+    end
+
+    @debug "$(now()) : Returning regional MCDA suitability score raster"
+
+    return Raster(params.region_data.valid_extent; data=indicator, missingval=0)
+end
+
 function assess_sites(params::SuitabilityAssessmentParameters)
     # Convert suitability integer -> float 64
     suitability_threshold = Float64(params.suitability_threshold / 100.0)

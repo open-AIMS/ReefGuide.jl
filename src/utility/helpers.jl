@@ -17,11 +17,15 @@ function build_criteria_bounds_from_regional_criteria(
     criteria_bounds = CriteriaBounds[]
 
     for (criteria_id, bounded_criteria) in bounded_criteria_dict
-        # `missing_pass` defaults to false: a no-data pixel fails the bound check.
+        raw_peak = bounded_criteria.band_peak
         bounds = CriteriaBounds(
             bounded_criteria.metadata.id,
             bounded_criteria.bounds.min,
-            bounded_criteria.bounds.max
+            bounded_criteria.bounds.max,
+            bounded_criteria.missing_weight;
+            direction=bounded_criteria.direction,
+            band_peak=isnothing(raw_peak) ? nothing : Float32(raw_peak),
+            weight=bounded_criteria.weight
         )
         push!(criteria_bounds, bounds)
         @debug "Added criteria bounds" criteria_id = criteria_id min_val =
