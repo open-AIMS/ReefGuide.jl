@@ -422,9 +422,18 @@ const REGIONAL_METADATA_DICT::Dict{String,RegionMetadata} = Dict(
 
 Build regional criteria bounds from slope table data.
 
-Computes min/max bounds for each assessment criteria by finding extrema
-in the slope table data columns. Only processes criteria that are available
-for the specific region as defined in the region metadata.
+Computes min/max bounds for each assessment criteria from the extrema of its
+slope table column, skipping `missing` entries (a criterion column is nullable
+where the region's bathymetry-bound mask admits pixels that layer does not
+cover). A criterion whose column is entirely `missing` yields no bounds entry, so
+it is left unfiltered downstream; a caller that requires that criterion (e.g. a
+user-specified bound) must handle its absence. Only processes criteria that are
+available for the specific region as defined in the region metadata.
+
+This is the slow path, used only when no bounds JSON sidecar is present. The
+sidecar path ([`load_bounds_from_sidecar`](@ref)) is preferred: its bounds are
+precomputed upstream (`GBR-reef-guidance-assessment/src/geom_handlers/lookup_processing.jl`),
+already excluding missings and omitting all-missing columns identically.
 
 # Arguments
 - `table::DataFrame` : Slope table containing criteria data columns
@@ -446,7 +455,13 @@ function derive_criteria_bounds_from_slope_table(
     )::Union{BoundedCriteria,Nothing}
         if criteria.id ∈ region_metadata.available_criteria
             if hasproperty(table, Symbol(criteria.id))
-                bounds = bounds_from_tuple(extrema(table[:, criteria.id]))
+                col = table[:, criteria.id]
+                if all(ismissing, col)
+                    @warn "Criteria column is entirely missing; omitting from bounds" region_id =
+                        region_metadata.id column = criteria.id
+                    return nothing
+                end
+                bounds = bounds_from_tuple(extrema(skipmissing(col)))
                 @debug "Computed $(criteria.display_label) bounds" range = "$(bounds.min):$(bounds.max)"
                 return BoundedCriteria(; metadata=criteria, bounds=bounds)
             else
@@ -645,7 +660,7 @@ function write_bounds_sidecar(bounds::BoundedCriteriaDict, sidecar_path::String)
         for (k, v) in bounds
     )
     open(sidecar_path, "w") do io
-        JSON3.write(io, d)
+        return JSON3.write(io, d)
     end
     return nothing
 end

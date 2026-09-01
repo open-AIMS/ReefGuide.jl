@@ -17,10 +17,9 @@ function build_criteria_bounds_from_regional_criteria(
     criteria_bounds = CriteriaBounds[]
 
     for (criteria_id, bounded_criteria) in bounded_criteria_dict
+        # `missing_pass` defaults to false: a no-data pixel fails the bound check.
         bounds = CriteriaBounds(
-            # Field to get in the data
             bounded_criteria.metadata.id,
-            # Min/max bounds
             bounded_criteria.bounds.min,
             bounded_criteria.bounds.max
         )

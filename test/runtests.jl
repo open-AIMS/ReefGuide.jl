@@ -193,3 +193,85 @@ end
         @test sort(result.score) == [1.0, 2.0]
     end
 end
+
+@testset "CriteriaBounds.rule is missing-safe" begin
+    # Lookup columns are Union{Missing,T}: a pixel valid under the region's
+    # bathymetry-bound mask can lack data for any individual criterion.
+    x = Union{Missing,Float32}[0.5, missing, 2.0, 0.0, 1.0]
+
+    cb = ReefGuide.CriteriaBounds("depth", 0.0f0, 1.0f0)
+    r = cb.rule(x)
+    @test r isa AbstractVector{Bool}          # never Union{Missing,Bool}
+    @test r == Bool[1, 0, 0, 1, 1]            # missing fails the check by default
+
+    # A fully-populated (non-nullable) column is unperturbed by the coalesce.
+    @test cb.rule(Float32[0.5, 2.0, 0.0]) == Bool[1, 0, 1]
+
+    # An all-missing column (Arrow may hand back eltype Missing) still yields a
+    # plain boolean mask, not Union{Missing,Bool}.
+    @test cb.rule(fill(missing, 3)) == falses(3)
+
+    # missing_pass = true lets a no-data pixel through the bound check
+    cb_pass = ReefGuide.CriteriaBounds("depth", 0.0f0, 1.0f0, true)
+    @test cb_pass.rule(x) == Bool[1, 1, 0, 1, 1]
+
+    # String constructor parses bounds and shares the same missing policy
+    @test ReefGuide.CriteriaBounds("depth", "0.0", "1.0").rule(x) == Bool[1, 0, 0, 1, 1]
+end
+
+@testset "filter_lookup_table_by_criteria with partial-coverage rows" begin
+    lookup = DataFrame(;
+        lon_idx=Int32[1, 2, 3, 4],
+        lat_idx=Int32[1, 1, 1, 1],
+        depth=Union{Missing,Float32}[0.5, missing, 0.7, 0.9],
+        slope=Union{Missing,Float32}[10.0, 12.0, missing, 11.0]
+    )
+    ruleset = ReefGuide.CriteriaBounds[
+        ReefGuide.CriteriaBounds("depth", 0.0f0, 1.0f0),
+        ReefGuide.CriteriaBounds("slope", 5.0f0, 15.0f0)
+    ]
+
+    matches = ReefGuide.filter_lookup_table_by_criteria(lookup, ruleset)
+    @test matches isa BitVector                       # declared return type is preserved
+    @test matches == BitVector([1, 0, 0, 1])          # rows 2 and 3 excluded via missing
+
+    # Row-indexing patterns the assess_* callers rely on must still work.
+    @test nrow(lookup[matches, :]) == 2
+    @test count(matches) == 2
+end
+
+@testset "derive_criteria_bounds_from_slope_table skips missing values" begin
+    region = ReefGuide.RegionMetadata(;
+        display_name="Test", id="test-region", available_criteria=["Depth", "Slope"]
+    )
+    table = DataFrame(;
+        Depth=Union{Missing,Float32}[-5.0, missing, -8.0, -3.0],
+        Slope=Union{Missing,Float32}[missing, missing, missing, missing]
+    )
+
+    bounds = @test_logs (:warn, r"entirely missing") match_mode = :any begin
+        ReefGuide.derive_criteria_bounds_from_slope_table(table, region)
+    end
+
+    # Depth bounds are the extrema of its non-missing values only.
+    @test bounds["Depth"].bounds.min == -8.0f0
+    @test bounds["Depth"].bounds.max == -3.0f0
+    # A criterion whose column is entirely missing is left out of the result.
+    @test !haskey(bounds, "Slope")
+end
+
+@testset "an omitted criterion is simply not filtered" begin
+    # A BoundedCriteriaDict with no entry for a criterion (as produced for an
+    # all-missing column) builds no CriteriaBounds for it, so that column is never
+    # filtered - the intended effect of the omission.
+    dict = ReefGuide.BoundedCriteriaDict(
+        "Depth" => ReefGuide.BoundedCriteria(;
+            metadata=ReefGuide.ASSESSMENT_CRITERIA["Depth"],
+            bounds=ReefGuide.Bounds(; min=-10.0, max=-2.0)
+        )
+    )
+
+    filters = ReefGuide.build_criteria_bounds_from_regional_criteria(dict)
+
+    @test [f.name for f in filters] == [:Depth]
+end
