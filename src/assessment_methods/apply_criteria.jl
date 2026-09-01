@@ -2,31 +2,41 @@
 
 """
 CriteriaBounds combine lookup information for a given criteria, bounds, and a
-rule (function) which enforces it for a given value
+rule (function) which enforces it for a given value.
+
+Lookup columns are nullable (`Union{Missing,T}`) since a pixel valid under the
+region's bathymetry-bound mask may lack data for any individual criterion. `rule`
+folds those `missing`s to `missing_pass`, so it always returns a plain boolean
+mask: with the default `missing_pass = false`, a no-data pixel fails the check and
+is excluded.
 """
 struct CriteriaBounds{F<:Function}
     "The field ID of the criteria"
     name::Symbol
-    "min"
+    "Lower bound, inclusive"
     lower_bound::Float32
-    "max"
+    "Upper bound, inclusive"
     upper_bound::Float32
-    "A function which takes a value and returns if matches the criteria"
+    "Whether a `missing` value passes the bound check (`false` excludes the pixel)"
+    missing_pass::Bool
+    "Takes a value or vector of values, returns whether each matches the criteria"
     rule::F
 
-    function CriteriaBounds(name::S, lb::S, ub::S)::CriteriaBounds where {S<:String}
+    function CriteriaBounds(
+        name::S, lb::S, ub::S, missing_pass::Bool=false
+    )::CriteriaBounds where {S<:String}
         lower_bound::Float32 = parse(Float32, lb)
         upper_bound::Float32 = parse(Float32, ub)
-        func = (x) -> lower_bound .<= x .<= upper_bound
+        rule = (x) -> coalesce.(lower_bound .<= x .<= upper_bound, missing_pass)
 
-        return new{Function}(Symbol(name), lower_bound, upper_bound, func)
+        return new{Function}(Symbol(name), lower_bound, upper_bound, missing_pass, rule)
     end
 
     function CriteriaBounds(
-        name::String, lb::Float32, ub::Float32
+        name::String, lb::Float32, ub::Float32, missing_pass::Bool=false
     )::CriteriaBounds
-        func = (x) -> lb .<= x .<= ub
-        return new{Function}(Symbol(name), lb, ub, func)
+        rule = (x) -> coalesce.(lb .<= x .<= ub, missing_pass)
+        return new{Function}(Symbol(name), lb, ub, missing_pass, rule)
     end
 end
 
