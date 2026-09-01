@@ -74,6 +74,10 @@ Metadata for assessment criteria including file naming conventions.
 - `default_bounds::OptionalValue{Bounds}` : The default bounds for the parameter sliders
 - `min_tooltip::String` : Tooltip text on min slider
 - `max_tooltip::String` : Tooltip text on max slider
+- `direction::Symbol` : Preference direction for the MCDA suitability score. One of
+  `:lower_is_better`, `:higher_is_better`, `:band`.
+- `band_peak::OptionalValue{Float64}` : The value at which suitability peaks (score `1`)
+  when `direction == :band`; `nothing` otherwise.
 """
 struct CriteriaMetadata
     id::String
@@ -85,6 +89,8 @@ struct CriteriaMetadata
     default_bounds::OptionalValue{Bounds}
     min_tooltip::String
     max_tooltip::String
+    direction::Symbol
+    band_peak::OptionalValue{Float64}
 
     function CriteriaMetadata(;
         id::String,
@@ -95,7 +101,9 @@ struct CriteriaMetadata
         payload_prefix::String,
         default_bounds::OptionalValue{Bounds}=nothing,
         min_tooltip::String,
-        max_tooltip::String
+        max_tooltip::String,
+        direction::Symbol,
+        band_peak::OptionalValue{Float64}=nothing
     )
         return new(
             id,
@@ -106,7 +114,9 @@ struct CriteriaMetadata
             payload_prefix,
             default_bounds,
             min_tooltip,
-            max_tooltip
+            max_tooltip,
+            direction,
+            band_peak
         )
     end
 end
@@ -123,7 +133,9 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         payload_prefix="depth_",
         default_bounds=Bounds(; min=-12.5, max=-2.0),
         min_tooltip="Minimum depth",
-        max_tooltip="Maximum depth"
+        max_tooltip="Maximum depth",
+        direction=:band,
+        band_peak=-5.0
     ),
     "LowTide" => CriteriaMetadata(;
         id="LowTide",
@@ -134,7 +146,9 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         payload_prefix="low_tide_",
         default_bounds=Bounds(; min=-12.5, max=-2.0),
         min_tooltip="Minimum depth (low-tide)",
-        max_tooltip="Maximum depth (low-tide)"
+        max_tooltip="Maximum depth (low-tide)",
+        direction=:band,
+        band_peak=-5.0
     ),
     "HighTide" => CriteriaMetadata(;
         id="HighTide",
@@ -145,7 +159,9 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         payload_prefix="high_tide_",
         default_bounds=Bounds(; min=-12.5, max=-2.0),
         min_tooltip="Minimum depth (high-tide)",
-        max_tooltip="Maximum depth (high-tide)"
+        max_tooltip="Maximum depth (high-tide)",
+        direction=:band,
+        band_peak=-5.0
     ),
     "Slope" => CriteriaMetadata(;
         id="Slope",
@@ -156,7 +172,8 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         payload_prefix="slope_",
         default_bounds=Bounds(; min=0.0, max=40.0),
         min_tooltip="Minimum slope angle (0 is flat)",
-        max_tooltip="Maximum slope angle"
+        max_tooltip="Maximum slope angle",
+        direction=:lower_is_better
     ),
     "Turbidity" => CriteriaMetadata(;
         id="Turbidity",
@@ -166,7 +183,8 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         units="Secchi depth meters",
         payload_prefix="turbidity_",
         min_tooltip="Minimum Secchi depth",
-        max_tooltip="Maximum Secchi depth"
+        max_tooltip="Maximum Secchi depth",
+        direction=:higher_is_better
     ),
     "WavesHs" => CriteriaMetadata(;
         id="WavesHs",
@@ -177,7 +195,8 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         payload_prefix="waves_height_",
         default_bounds=Bounds(; min=0.0, max=2.5),
         min_tooltip="Minimum wave height",
-        max_tooltip="Maximum wave height"
+        max_tooltip="Maximum wave height",
+        direction=:lower_is_better
     ),
     "WavesTp" => CriteriaMetadata(;
         id="WavesTp",
@@ -188,7 +207,8 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         payload_prefix="waves_period_",
         default_bounds=Bounds(; min=4.0, max=10.0),
         min_tooltip="Minimum periodicity",
-        max_tooltip="Maximum periodicity"
+        max_tooltip="Maximum periodicity",
+        direction=:higher_is_better
     ),
     "Rugosity" => CriteriaMetadata(;
         id="Rugosity",
@@ -198,7 +218,8 @@ const ASSESSMENT_CRITERIA::Dict{String,CriteriaMetadata} = Dict(
         units="stdev",
         payload_prefix="rugosity_",
         min_tooltip="Minimum variability",
-        max_tooltip="Maximum variability"
+        max_tooltip="Maximum variability",
+        direction=:lower_is_better
     )
 )
 
@@ -211,16 +232,34 @@ Combines criteria metadata with regional boundary values.
 # Fields
 - `metadata::CriteriaMetadata` : Criteria definition and metadata
 - `bounds::Bounds` : Min/max values for this criteria in the region
+- `direction::Symbol` : Preference direction for the MCDA suitability score; defaults
+  to `metadata.direction`, overridable per `BoundedCriteria`.
+- `band_peak::OptionalValue{Float64}` : Value at which suitability peaks when
+  `direction == :band`; defaults to `metadata.band_peak`, overridable per
+  `BoundedCriteria`.
+- `missing_weight::Float32` : Value substituted on the `[0,1]` suitability scale for a
+  `missing` pixel value. Defaults to `0.0f0`, which also excludes the pixel from the
+  boolean bound check.
+- `weight::Float32` : Relative weight of this criterion in the weighted-mean aggregate.
+  Defaults to `1.0f0` (equal weighting).
 """
 struct BoundedCriteria
     metadata::CriteriaMetadata
     bounds::Bounds
+    direction::Symbol
+    band_peak::OptionalValue{Float64}
+    missing_weight::Float32
+    weight::Float32
 
     function BoundedCriteria(;
         metadata::CriteriaMetadata,
-        bounds::Bounds
+        bounds::Bounds,
+        direction::Symbol=metadata.direction,
+        band_peak::OptionalValue{Float64}=metadata.band_peak,
+        missing_weight::Float32=0.0f0,
+        weight::Float32=1.0f0
     )
-        return new(metadata, bounds)
+        return new(metadata, bounds, direction, band_peak, missing_weight, weight)
     end
 end
 

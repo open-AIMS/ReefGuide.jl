@@ -211,8 +211,8 @@ end
     # plain boolean mask, not Union{Missing,Bool}.
     @test cb.rule(fill(missing, 3)) == falses(3)
 
-    # missing_pass = true lets a no-data pixel through the bound check
-    cb_pass = ReefGuide.CriteriaBounds("depth", 0.0f0, 1.0f0, true)
+    # A positive missing_weight lets a no-data pixel through the bound check.
+    cb_pass = ReefGuide.CriteriaBounds("depth", 0.0f0, 1.0f0, 1.0f0)
     @test cb_pass.rule(x) == Bool[1, 1, 0, 1, 1]
 
     # String constructor parses bounds and shares the same missing policy
@@ -274,4 +274,166 @@ end
     filters = ReefGuide.build_criteria_bounds_from_regional_criteria(dict)
 
     @test [f.name for f in filters] == [:Depth]
+end
+
+# MCDA weighted-sum scorer
+
+@testset "MCDA per-direction ramp endpoints + clamping" begin
+    lb, ub = 0.0f0, 10.0f0
+
+    cb_low = ReefGuide.CriteriaBounds("x", lb, ub; direction=:lower_is_better)
+    s = cb_low.score(Float32[0.0, 10.0, -5.0, 15.0, 5.0])
+    @test s[1] === 1.0f0                  # exactly 1 at the lower bound
+    @test s[2] === 0.0f0                  # exactly 0 at the upper bound
+    @test s[3] === 1.0f0                  # clamped below the ramp
+    @test s[4] === 0.0f0                  # clamped above the ramp
+    @test isapprox(s[5], 0.5f0)           # linear midpoint
+
+    cb_high = ReefGuide.CriteriaBounds("x", lb, ub; direction=:higher_is_better)
+    s = cb_high.score(Float32[0.0, 10.0, -5.0, 15.0, 5.0])
+    @test s[1] === 0.0f0                  # exactly 0 at the lower bound
+    @test s[2] === 1.0f0                  # exactly 1 at the upper bound
+    @test s[3] === 0.0f0                  # clamped below the ramp
+    @test s[4] === 1.0f0                  # clamped above the ramp
+    @test isapprox(s[5], 0.5f0)
+end
+
+@testset "MCDA band triangle" begin
+    cb = ReefGuide.CriteriaBounds(
+        "Depth", -12.5f0, -2.0f0; direction=:band, band_peak=-5.0f0
+    )
+    s = cb.score(Float32[-5.0, -12.5, -2.0, -7.0, -4.0, -20.0, 0.0])
+    @test s[1] === 1.0f0                       # peak
+    @test s[2] === 0.0f0                       # lower bound
+    @test s[3] === 0.0f0                       # upper bound
+    @test isapprox(s[4], 5.5f0 / 7.5f0)        # linear on the left flank
+    @test isapprox(s[5], 2.0f0 / 3.0f0)        # linear on the right flank
+    @test s[6] === 0.0f0                       # below the band
+    @test s[7] === 0.0f0                       # above the band
+end
+
+@testset "MCDA equal-weight mean aggregation across >= 2 criteria" begin
+    df = DataFrame(; A=Float32[0.0, 10.0], B=Float32[10.0, 10.0])
+    ruleset = ReefGuide.CriteriaBounds[
+        ReefGuide.CriteriaBounds("A", 0.0f0, 10.0f0; direction=:higher_is_better),
+        ReefGuide.CriteriaBounds("B", 0.0f0, 10.0f0; direction=:higher_is_better)
+    ]
+
+    scores = ReefGuide.score_lookup_table_by_criteria(df, ruleset)
+    @test scores isa Vector{Float32}
+    @test length(scores) == nrow(df)
+    @test isapprox(scores[1], 0.5f0)          # (0.0 + 1.0) / 2
+    @test isapprox(scores[2], 1.0f0)          # (1.0 + 1.0) / 2
+end
+
+@testset "MCDA missing_weight folds a missing cell onto the [0,1] scale" begin
+    df = DataFrame(;
+        lon_idx=Int32[1, 2],
+        lat_idx=Int32[1, 1],
+        A=Union{Missing,Float32}[missing, 5.0],
+        B=Union{Missing,Float32}[6.0, 6.0]
+    )
+
+    # missing_weight = 0.0f0: the missing cell fails the boolean rule and its
+    # per-criterion score is 0.
+    rs_zero = ReefGuide.CriteriaBounds[
+        ReefGuide.CriteriaBounds("A", 0.0f0, 10.0f0; direction=:higher_is_better),
+        ReefGuide.CriteriaBounds("B", 0.0f0, 10.0f0; direction=:higher_is_better)
+    ]
+    matches = ReefGuide.filter_lookup_table_by_criteria(df, rs_zero)
+    @test matches isa BitVector
+    @test matches == BitVector([0, 1])                     # row 1 excluded via missing
+    @test rs_zero[1].score([missing])[1] === 0.0f0         # per-criterion score is 0
+
+    scores_zero = ReefGuide.score_lookup_table_by_criteria(df, rs_zero)
+    @test isapprox(scores_zero[1], 0.3f0)                  # (0.0 + 0.6) / 2
+
+    # A mid missing_weight pulls the aggregate for that row up toward 0.5.
+    rs_mid = ReefGuide.CriteriaBounds[
+        ReefGuide.CriteriaBounds(
+            "A", 0.0f0, 10.0f0, 0.5f0; direction=:higher_is_better
+        ),
+        ReefGuide.CriteriaBounds("B", 0.0f0, 10.0f0; direction=:higher_is_better)
+    ]
+    scores_mid = ReefGuide.score_lookup_table_by_criteria(df, rs_mid)
+    @test isapprox(scores_mid[1], 0.55f0)                  # (0.5 + 0.6) / 2
+    @test scores_mid[1] > scores_zero[1]
+end
+
+@testset "MCDA boolean path is unchanged (regression) + score band well-formed" begin
+    lookup = DataFrame(;
+        lon_idx=Int32[1, 2, 3, 4, 5],
+        lat_idx=Int32[1, 1, 1, 1, 1],
+        Depth=Union{Missing,Float32}[-5.0, -13.0, -3.0, missing, -8.0],
+        Slope=Union{Missing,Float32}[10.0, 5.0, 45.0, 20.0, missing]
+    )
+    ruleset = ReefGuide.CriteriaBounds[
+        ReefGuide.CriteriaBounds(
+            "Depth", -12.5f0, -2.0f0; direction=:band, band_peak=-5.0f0
+        ),
+        ReefGuide.CriteriaBounds("Slope", 0.0f0, 40.0f0; direction=:lower_is_better)
+    ]
+
+    matches = ReefGuide.filter_lookup_table_by_criteria(lookup, ruleset)
+    @test matches isa BitVector
+    # Row 1 passes both criteria; rows 2-3 fail on Depth/Slope out of band,
+    # rows 4-5 fail on a missing value under the default missing_weight = 0.
+    @test matches == BitVector([1, 0, 0, 0, 0])
+
+    scores = ReefGuide.score_lookup_table_by_criteria(lookup, ruleset)
+    @test scores isa Vector{Float32}
+    @test length(scores) == nrow(lookup)
+    @test all(v -> v >= 0.0f0 && v <= 1.0f0, scores)
+end
+
+@testset "MCDA config threads Criteria -> BoundedCriteria -> CriteriaBounds" begin
+    # Defaults from ASSESSMENT_CRITERIA reach CriteriaBounds via BoundedCriteria.
+    dict = ReefGuide.BoundedCriteriaDict(
+        "Depth" => ReefGuide.BoundedCriteria(;
+            metadata=ReefGuide.ASSESSMENT_CRITERIA["Depth"],
+            bounds=ReefGuide.Bounds(; min=-12.5, max=-2.0)
+        ),
+        "Slope" => ReefGuide.BoundedCriteria(;
+            metadata=ReefGuide.ASSESSMENT_CRITERIA["Slope"],
+            bounds=ReefGuide.Bounds(; min=0.0, max=40.0)
+        )
+    )
+    filters = ReefGuide.build_criteria_bounds_from_regional_criteria(dict)
+    by_name = Dict(f.name => f for f in filters)
+
+    @test by_name[:Depth].direction === :band
+    @test by_name[:Depth].band_peak == -5.0f0
+    @test by_name[:Depth].missing_weight === 0.0f0
+    @test by_name[:Depth].weight === 1.0f0
+    @test by_name[:Slope].direction === :lower_is_better
+    @test by_name[:Slope].band_peak === nothing
+
+    # A per-request override on BoundedCriteria propagates too.
+    dict2 = ReefGuide.BoundedCriteriaDict(
+        "Slope" => ReefGuide.BoundedCriteria(;
+            metadata=ReefGuide.ASSESSMENT_CRITERIA["Slope"],
+            bounds=ReefGuide.Bounds(; min=0.0, max=40.0),
+            direction=:band,
+            band_peak=15.0,
+            missing_weight=0.25f0,
+            weight=2.0f0
+        )
+    )
+    f = only(ReefGuide.build_criteria_bounds_from_regional_criteria(dict2))
+    @test f.direction === :band
+    @test f.band_peak === 15.0f0
+    @test f.missing_weight === 0.25f0
+    @test f.weight === 2.0f0
+
+    # Overriding direction to :band without an explicit band_peak leaves it
+    # `nothing` (metadata default), so the score falls back to the bound midpoint.
+    dict3 = ReefGuide.BoundedCriteriaDict(
+        "Slope" => ReefGuide.BoundedCriteria(;
+            metadata=ReefGuide.ASSESSMENT_CRITERIA["Slope"],
+            bounds=ReefGuide.Bounds(; min=0.0, max=40.0),
+            direction=:band
+        )
+    )
+    g = only(ReefGuide.build_criteria_bounds_from_regional_criteria(dict3))
+    @test g.band_peak === nothing
 end
