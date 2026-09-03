@@ -3,6 +3,7 @@
 # =============================================================================
 
 const SLOPES_LOOKUP_SUFFIX = "_valid_slopes_lookup.arrow"
+const PARQUET_LOOKUP_SUFFIX = "_valid_slopes_lookup.parquet"
 const SLOPES_BOUNDS_SUFFIX = "_valid_slopes_bounds.json"
 const SLOPES_RASTER_SUFFIX = "_valid_slopes.tif"
 
@@ -738,11 +739,62 @@ function load_scoped_arrow_table(
     return result
 end
 
+"""Escape single quotes so a path can be safely interpolated into a SQL string literal."""
+_escape_sql_literal(s::AbstractString) = replace(s, "'" => "''")
+
+"""
+Load rows from a Parquet file that fall within the given spatial scope, using a real
+DuckDB query engine (`DuckDB.jl`/`QuackIO.jl`) for genuine row-group/predicate pushdown
+rather than `load_scoped_arrow_table`'s full-decompress-then-mask.
+
+For `nothing` (full-region jobs), falls back to `QuackIO.read_parquet(DataFrame, path)`.
+For `BBoxScope`, the bbox predicate is pushed into the SQL query itself (`WHERE lons
+BETWEEN ... AND lats BETWEEN ...`), so only matching row groups are ever materialised.
+For `PolygonScope`, the polygon's bounding-box envelope is pushed down the same way to
+shrink the candidate set, then the existing in-memory `GO.within` point-in-polygon test
+(via `_build_scope_mask`) is applied to the already-much-smaller result — DuckDB's
+`spatial` extension/`ST_Within` is explicitly out of scope (see
+`.claude/plans/duckdb-switch.md`).
+"""
+function load_scoped_parquet_table(
+    path::String, scope::Union{SpatialScope,Nothing}
+)::DataFrame
+    if isnothing(scope)
+        return QuackIO.read_parquet(DataFrame, path)
+    end
+
+    min_lon, min_lat, max_lon, max_lat = if scope isa BBoxScope
+        scope.min_lon, scope.min_lat, scope.max_lon, scope.max_lat
+    elseif scope isa PolygonScope
+        extent = GI.extent(scope.geometry)
+        extent.X[1], extent.Y[1], extent.X[2], extent.Y[2]
+    else
+        error("Unsupported SpatialScope subtype: $(typeof(scope))")
+    end
+
+    escaped_path = _escape_sql_literal(path)
+    query = """
+        SELECT * FROM read_parquet('$(escaped_path)')
+        WHERE lons BETWEEN $(min_lon) AND $(max_lon)
+          AND lats BETWEEN $(min_lat) AND $(max_lat)
+    """
+    con = DuckDB.DB()
+    result = DataFrame(DuckDB.execute(con, query))
+
+    if scope isa PolygonScope
+        mask = _build_scope_mask(result.lons, result.lats, scope)
+        result = result[mask, :]
+    end
+
+    return result
+end
+
 """
     load_target_region(;
         region_id::String,
         data_source_directory::String,
-        scope::Union{SpatialScope,Nothing}=nothing
+        scope::Union{SpatialScope,Nothing}=nothing,
+        backend::Symbol=:arrow
     )::RegionalDataEntry
 
 Load data for a specific target region.
@@ -757,6 +809,11 @@ Load data for a specific target region.
   always computed from the *full* region table regardless of `scope`, so
   scoped and unscoped loads normalize criteria identically. When `nothing`
   (the default), behaviour is unchanged from before `scope` existed.
+- `backend` : Slope table file format/loader to use — `:arrow` (default,
+  identical behaviour to before this parameter existed) or `:parquet`
+  (DuckDB/QuackIO-backed reader against the Parquet sibling file). Only the
+  slope-table load call itself branches on this; bounds-sidecar handling is
+  unchanged and shared by both backends.
 
 # Returns
 `RegionalDataEntry` for the specified region, restricted to `scope` if given.
@@ -764,8 +821,13 @@ Load data for a specific target region.
 function load_target_region(;
     region_id::String,
     data_source_directory::String,
-    scope::Union{SpatialScope,Nothing}=nothing
+    scope::Union{SpatialScope,Nothing}=nothing,
+    backend::Symbol=:arrow
 )::RegionalDataEntry
+    if backend !== :arrow && backend !== :parquet
+        throw(ArgumentError("backend must be :arrow or :parquet, got :$(backend)"))
+    end
+
     try
         # Get the regional metadata
         region_metadata = REGIONAL_METADATA_DICT[region_id]
@@ -779,7 +841,7 @@ function load_target_region(;
         # Load slope table containing valid reef coordinates and criteria values
         slope_filename = get_slope_filename(region_metadata)
         slope_file_path = joinpath(data_source_directory, slope_filename)
-        @debug "Loading slope table" file_path = slope_file_path
+        @debug "Loading slope table" file_path = slope_file_path backend = backend
 
         sidecar_path = get_bounds_sidecar_path(slope_file_path)
 
@@ -788,7 +850,14 @@ function load_target_region(;
             @debug "Loaded criteria bounds from sidecar" sidecar_path
 
             load_time = @elapsed begin
-                slope_table::DataFrame = load_scoped_arrow_table(slope_file_path, scope)
+                slope_table::DataFrame = if backend === :arrow
+                    load_scoped_arrow_table(slope_file_path, scope)
+                else
+                    parquet_file_path = replace(
+                        slope_file_path, SLOPES_LOOKUP_SUFFIX => PARQUET_LOOKUP_SUFFIX
+                    )
+                    load_scoped_parquet_table(parquet_file_path, scope)
+                end
             end
             @info """
                 Loaded slope table for $(region_metadata.id)
@@ -799,7 +868,14 @@ function load_target_region(;
             @warn "Bounds sidecar not found for $(slope_file_path); computing from full table (slow path)"
 
             load_time = @elapsed begin
-                slope_table = DataFrame(Arrow.Table(slope_file_path))
+                slope_table = if backend === :arrow
+                    DataFrame(Arrow.Table(slope_file_path))
+                else
+                    parquet_file_path = replace(
+                        slope_file_path, SLOPES_LOOKUP_SUFFIX => PARQUET_LOOKUP_SUFFIX
+                    )
+                    load_scoped_parquet_table(parquet_file_path, nothing)
+                end
             end
             @info """
                 Loaded slope table for $(region_metadata.id)

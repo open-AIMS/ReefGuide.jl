@@ -9,6 +9,7 @@ using Glob, Serialization
 # Geospatial
 using ArchGDAL, Arrow, Rasters
 using JSON3, Tables
+using DuckDB, QuackIO
 
 # Collections
 using DataFrames, OrderedCollections, SparseArrays
