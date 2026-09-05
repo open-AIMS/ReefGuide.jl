@@ -1,6 +1,15 @@
 """Methods for identifying potential deployment locations."""
 
 """
+Minimum value a genuinely-assessed pixel can be stored as in the WLC score raster
+(see [`assess_region_score`](@ref)). Well below the resolution anyone would read off
+a `[0,1]` heatmap, but strictly greater than the raster's `missingval=0`/implicit
+sparse-zero background, so a real "worst possible score" pixel stays visually and
+numerically distinct from "not part of this region's valid footprint at all".
+"""
+const SCORE_RASTER_FLOOR = 1.0f-4
+
+"""
     proportion_suitable(
         x::Union{BitMatrix,SparseMatrixCSC{Bool,Int64}}; square_offset::Tuple=(-4, 5)
     )::SparseMatrixCSC{Int8,Int64}
@@ -203,20 +212,32 @@ function assess_region_score(
     region_dims = size(params.region_data.valid_extent)
     band_size_MB = prod(region_dims) * sizeof(Float32) / 1024^2
 
+    # A row scoring exactly 0.0 (every weighted criterion at its worst) is a real,
+    # legitimate result - not the same thing as a pixel outside the region's valid
+    # footprint entirely, which is what `missingval=0`/an unset sparse entry means.
+    # Both the dense and sparse paths below encode "not assessed" as an implicit/
+    # background 0.0f0, so an assessed-but-terrible pixel would otherwise be
+    # indistinguishable from background - rendered fully transparent by the
+    # frontend's `band == 0 -> transparent` heatmap style (see `heatmapLayerStyle`),
+    # looking like a coverage gap rather than a real (if poor) score. Floor stored
+    # scores just above zero so only true background ever reads as exactly 0.0; the
+    # raw `scores` vector above (e.g. for future non-raster consumers) is untouched.
+    raster_scores = max.(scores, SCORE_RASTER_FLOOR)
+
     @debug "$(now()) : Marking scores in raster"
     # Arbitrary threshold - use sparse matrices if likely to exceed memory
     if band_size_MB < 700
         @debug "$(now()) : Creating score band as a regular matrix (est. size: $(band_size_MB))"
         indicator = zeros(Float32, region_dims...)
 
-        Threads.@threads for i in eachindex(scores)
-            indicator[lookup_tbl.lon_idx[i], lookup_tbl.lat_idx[i]] = scores[i]
+        Threads.@threads for i in eachindex(raster_scores)
+            indicator[lookup_tbl.lon_idx[i], lookup_tbl.lat_idx[i]] = raster_scores[i]
         end
     else
         @debug "$(now()) : Creating score band as a sparse matrix (est. full size: $(band_size_MB))"
 
         indicator = ExtendableSparseMatrix(
-            lookup_tbl.lon_idx, lookup_tbl.lat_idx, scores, region_dims...
+            lookup_tbl.lon_idx, lookup_tbl.lat_idx, raster_scores, region_dims...
         )
     end
 
